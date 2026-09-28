@@ -1,0 +1,7 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; background: #f6f8fa; color: #1f2328; }
+main { width: min(720px, calc(100% - 40px)); margin: 10vh auto; padding: 28px; background: white; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.12); }
+h1 { margin: 0 0 8px; } #document-title { color: #59636e; overflow-wrap: anywhere; }
+progress { width: 100%; height: 18px; } #status { font-weight: 600; }
+#details { max-height: 260px; overflow: auto; white-space: pre-wrap; color: #59636e; }
+@media (prefers-color-scheme: dark) { body { background: #0d1117; color: #e6edf3; } main { background: #161b22; } #document-title, #details { color: #9da7b3; } }
