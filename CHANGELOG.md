@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.0 - 2026-09-28
+
+- Added a custom violet-and-blue extension logo selected from six concepts.
+- Added optimized transparent PNG icons at 16, 32, 48, and 128 pixels.
+- Added the logo to the extension manifest, toolbar action, and README hero.
+
 ## 1.3.1 - 2026-09-28
 
 - Documented and surfaced support for previews opened through `scribdvdownloader.com`.
