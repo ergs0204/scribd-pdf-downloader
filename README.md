@@ -8,6 +8,7 @@
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](#installation)
 [![Edge Compatible](https://img.shields.io/badge/Edge-Compatible-0078D7?logo=microsoftedge&logoColor=white)](#installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/ergs02046)
 
 No scrolling. No copied tokens. No OCR service. Open a document, click the extension, and follow the live progress.
 
@@ -173,6 +174,10 @@ After editing, reload the unpacked extension from `chrome://extensions` and test
 ## Contributing
 
 This started as a quick personal vibe-coded utility, so rough edges are expected. Focused bug reports and small pull requests are welcome. Never include Scribd cookies, CSRF tokens, signed asset URLs, or copyrighted page data in an issue.
+
+## Support
+
+If this quick personal tool saves you time, you can [buy me a coffee](https://buymeacoffee.com/ergs02046). Support is appreciated but never required.
 
 ## License
 
