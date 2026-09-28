@@ -19,7 +19,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 </div>
 
 > [!IMPORTANT]
-> This is a quick, vibe-coded tool built for personal use. It is not affiliated with, endorsed by, or supported by Scribd. Use it only for documents you are authorized to access and save, and respect copyright law and Scribd's terms.
+> This is a personal-use tool. It is not affiliated with, endorsed by, or supported by Scribd. Use it only for documents you are authorized to access and save, and respect copyright law and Scribd's terms.
 
 ## Features
 
@@ -176,7 +176,7 @@ After editing, reload the unpacked extension from `chrome://extensions` and test
 
 ## Contributing
 
-This started as a quick personal vibe-coded utility, so rough edges are expected. Focused bug reports and small pull requests are welcome. Never include Scribd cookies, CSRF tokens, signed asset URLs, or copyrighted page data in an issue.
+This started as a small personal utility, so rough edges are expected. Focused bug reports and small pull requests are welcome. Never include Scribd cookies, CSRF tokens, signed asset URLs, or copyrighted page data in an issue.
 
 ## Support
 
@@ -194,6 +194,6 @@ This software is provided for personal and educational use. It is a convenience 
 
 <div align="center">
 
-Quickly vibe-coded with Codex, tested against official and embedded Scribd page manifests, and shared as-is for personal use.
+Built with Codex, tested against official and embedded Scribd page manifests, and shared as-is for personal use.
 
 </div>
