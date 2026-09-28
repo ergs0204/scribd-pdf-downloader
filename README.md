@@ -4,7 +4,7 @@
 
 **One-click PDF export for Scribd pages you can already access.**
 
-[![Release](https://img.shields.io/github/v/release/ergs0204/scribd-preview-to-pdf?display_name=tag&sort=semver)](../../releases/latest)
+[![Release](https://img.shields.io/github/v/release/ergs0204/scribd-pdf-downloader?display_name=tag&sort=semver)](../../releases/latest)
 [![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](#installation)
 [![Edge Compatible](https://img.shields.io/badge/Edge-Compatible-0078D7?logo=microsoftedge&logoColor=white)](#installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -54,7 +54,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### From source
 
 ```bash
-git clone https://github.com/ergs0204/scribd-preview-to-pdf.git
+git clone https://github.com/ergs0204/scribd-pdf-downloader.git
 ```
 
 Then load the cloned folder as an unpacked extension. No build step or package installation is required.
