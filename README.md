@@ -23,7 +23,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 
 - **One-click export** - Start from the extension popup.
 - **Official Scribd pages** - Supports both `/document/...` and legacy `/doc/...` URLs.
-- **Embedded previews** - Detects Scribd previews inside other websites.
+- **Embedded previews** - Detects Scribd previews inside other websites, including [scribdvdownloader.com](https://scribdvdownloader.com/).
 - **No manual scrolling** - Reads Scribd's complete built-in page manifest directly.
 - **Background rendering** - A hidden extension document keeps working after the popup closes.
 - **Global progress** - Reopen the popup at any time to see rendered pages, selectable-text pages, failures, assembly, and save status.
@@ -44,7 +44,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### Recommended: GitHub Release
 
 1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.3.0.zip`.
+2. Download `scribd-preview-to-pdf-extension-v1.3.1.zip`.
 3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
 4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 5. Enable **Developer mode**.
@@ -64,7 +64,8 @@ Then load the cloned folder as an unpacked extension. No build step or package i
 1. Open one of these:
    - `https://www.scribd.com/document/<id>/<title>`
    - `https://www.scribd.com/doc/<id>/<title>`
-   - A website containing a Scribd preview frame
+   - [scribdvdownloader.com](https://scribdvdownloader.com/) after it opens the document preview
+   - Any other website containing a Scribd preview frame
 2. Wait until the document page or preview is visible.
 3. Click the extension icon.
 4. Click **Download all pages as PDF**.
@@ -137,7 +138,7 @@ No analytics, advertising SDK, external API, or telemetry is included.
 ### "No supported Scribd document was detected"
 
 - Confirm the URL starts with `https://www.scribd.com/doc/` or `https://www.scribd.com/document/`.
-- For third-party sites, wait until the embedded preview appears.
+- On [scribdvdownloader.com](https://scribdvdownloader.com/) or another third-party site, wait until the embedded Scribd preview appears.
 - Reload the page after installing or updating the extension.
 - Confirm the installed extension version matches the latest release.
 

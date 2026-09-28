@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## 1.3.1 - 2026-09-28
+
+- Documented and surfaced support for previews opened through `scribdvdownloader.com`.
+- Clarified that embedded-preview support does not require additional access to the outer website.
+
 ## 1.3.0 - 2026-09-28
 
 - Added official `scribd.com/doc/...` and `scribd.com/document/...` support.
