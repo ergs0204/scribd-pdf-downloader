@@ -29,6 +29,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 - **No manual scrolling** - Reads Scribd's complete built-in page manifest directly.
 - **Background rendering** - A hidden extension document keeps working after the popup closes.
 - **Global progress** - Reopen the popup at any time to see rendered pages, selectable-text pages, failures, assembly, and save status.
+- **Deduplicated document queue** - Add other previews while one PDF is rendering; documents run one at a time and the same document cannot be queued twice.
 - **Concurrent downloads** - Six workers fetch pages with bounded retries.
 - **Sprite reconstruction** - Reassembles Scribd's clipped page-image sprites at their correct positions.
 - **Selectable text when available** - Preserves Scribd's own Unicode text layer without external OCR.
@@ -46,7 +47,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### Recommended: GitHub Release
 
 1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.4.0.zip`.
+2. Download `scribd-preview-to-pdf-extension-v1.4.1.zip`.
 3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
 4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 5. Enable **Developer mode**.
@@ -72,7 +73,8 @@ Then load the cloned folder as an unpacked extension. No build step or package i
 3. Click the extension icon.
 4. Click **Download all pages as PDF**.
 5. Close or reopen the popup whenever you like. Rendering continues in the hidden extension document.
-6. When assembly finishes, choose where to save the PDF.
+6. To add another document, open its Scribd page and click **Add this document to queue**. Queued documents render in order.
+7. When each assembly finishes, choose where to save the PDF.
 
 No page-by-page scrolling is required.
 

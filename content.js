@@ -11,10 +11,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function prepareJob() {
-  const source = await fetch(location.href, { credentials: "include", cache: "no-store" }).then(assertOk).then(r => r.text());
-  const documentId = getDocumentId(source);
-  const pages = parsePages(source);
+  const pageSource = await fetch(location.href, { credentials: "include", cache: "no-store" }).then(assertOk).then(r => r.text());
+  const documentId = getDocumentId(pageSource);
+  const source = await getPreviewSource(documentId, pageSource);
+  let pages = parsePages(source);
   if (!pages.length) throw new Error("No Scribd page manifest was found in this preview.");
+
+  await waitForRenderedPages(pages, 5000);
+  pages = attachRenderedPageHtml(pages, document);
 
   const csrf = await fetch("https://www.scribd.com/csrf_token", {
     method: "POST", credentials: "include", headers: { "content-type": "application/json" },
@@ -28,9 +32,46 @@ async function prepareJob() {
   }).then(assertOk).then(r => r.json());
 
   return {
-    documentId, title: getTitle(source, documentId), token: tokenResult.token, pages,
-    styleText: extractStyleText(source), concurrency: 6, jpegQuality: 0.92
+    documentId, title: getTitle(pageSource, documentId), token: tokenResult.token, pages,
+    styleText: `${extractStyleText(pageSource)}\n${extractStyleText(source)}`, concurrency: 6, jpegQuality: 0.92
   };
+}
+
+async function getPreviewSource(documentId, fallbackSource) {
+  if (!/^\/(?:doc|document)\/\d+(?:\/|$)/i.test(location.pathname)) return fallbackSource;
+  const previewUrl = new URL(`/embeds/${documentId}/content`, location.origin);
+  previewUrl.searchParams.set("start_page", "1");
+  previewUrl.searchParams.set("view_mode", "scroll");
+  previewUrl.searchParams.set("show_recommendations", "false");
+  try {
+    const previewSource = await fetch(previewUrl, {
+      credentials: "include",
+      cache: "no-store"
+    }).then(assertOk).then(response => response.text());
+    return parsePages(previewSource).length ? previewSource : fallbackSource;
+  } catch (_) {
+    return fallbackSource;
+  }
+}
+
+async function waitForRenderedPages(pages, timeoutMs) {
+  const expected = new Set(pages.map(page => page.pageNum));
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    let found = 0;
+    for (const pageNum of expected) {
+      if (document.getElementById(`page${pageNum}`)) found++;
+    }
+    if (found === expected.size) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+function attachRenderedPageHtml(pages, root) {
+  return pages.map(page => {
+    const rendered = root.getElementById(`page${page.pageNum}`);
+    return rendered ? { ...page, inlineHtml: rendered.outerHTML } : page;
+  });
 }
 
 function assertOk(response) {

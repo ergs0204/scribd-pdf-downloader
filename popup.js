@@ -3,13 +3,15 @@ const progress = document.getElementById("progress");
 const status = document.getElementById("status");
 const details = document.getElementById("details");
 let pollTimer;
+let preparing = false;
 
 refreshStatus();
 pollTimer = setInterval(refreshStatus, 700);
 window.addEventListener("unload", () => clearInterval(pollTimer));
 
 button.addEventListener("click", async () => {
-  button.disabled = true;
+  if (preparing) return;
+  preparing = true;
   setDisplay({ phase: "detecting", message: "Finding a Scribd document or preview…", completed: 0, total: 0, failures: [] });
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -32,11 +34,35 @@ button.addEventListener("click", async () => {
     setDisplay({ phase: "starting", message: `Found ${prepared.job.pages.length} pages. Starting the hidden renderer…`, completed: 0, total: prepared.job.pages.length, failures: [] });
     const started = await chrome.runtime.sendMessage({ type: "start-job", job: prepared.job });
     if (!started?.ok) throw new Error(started?.error || "Could not start the PDF builder.");
+    preparing = false;
+    if (started.duplicate) {
+      setDisplay({
+        running: true,
+        phase: "queued",
+        message: "This document is already downloading or waiting in the queue.",
+        completed: 0,
+        total: prepared.job.pages.length,
+        failures: []
+      });
+      return;
+    }
+    setDisplay({
+      running: true,
+      phase: started.position > 0 ? "queued" : "starting",
+      message: started.position > 0
+        ? `Added to queue at position ${started.position}.`
+        : `Found ${prepared.job.pages.length} pages. Starting renderer…`,
+      completed: 0,
+      total: prepared.job.pages.length,
+      queued: started.position > 0 ? Array.from({ length: started.position }, () => ({})) : [],
+      failures: [],
+      title: prepared.job.title
+    });
     await refreshStatus();
   } catch (error) {
     console.error(error);
+    preparing = false;
     setDisplay({ phase: "failed", message: error.message, completed: 0, total: 0, failures: [] });
-    button.disabled = false;
   }
 });
 
@@ -52,7 +78,7 @@ function chooseScribdFrame(frames, activeUrl) {
 async function refreshStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "get-status" });
-    if (response?.ok) setDisplay(response.state);
+    if (response?.ok && (!preparing || response.state?.running)) setDisplay(response.state);
   } catch (_) {}
 }
 
@@ -67,9 +93,14 @@ function setDisplay(state) {
   if (total) parts.push(`${completed} / ${total} pages`);
   if (state.textPages) parts.push(`${state.textPages} with selectable text`);
   if (state.failures?.length) parts.push(`${state.failures.length} failed`);
+  if (state.queued?.length) parts.push(`${state.queued.length} queued`);
   if (state.sizeMiB) parts.push(`${state.sizeMiB} MiB`);
   if (state.title) parts.push(state.title);
   details.textContent = parts.join(" • ");
-  button.disabled = !!state.running;
-  button.textContent = state.running ? "Download in progress…" : "Download all pages as PDF";
+  button.disabled = preparing;
+  button.textContent = preparing
+    ? "Preparing download…"
+    : state.running
+      ? "Add this document to queue"
+      : "Download all pages as PDF";
 }

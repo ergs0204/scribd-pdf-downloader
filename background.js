@@ -12,7 +12,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message?.type === "get-status") {
     chrome.storage.session.get("downloadState").then(result => {
-      sendResponse({ ok: true, state: result.downloadState || state });
+      const stored = result.downloadState;
+      if (stored && Number(stored.updatedAt) > Number(state.updatedAt)) state = stored;
+      sendResponse({ ok: true, state });
     });
     return true;
   }
@@ -33,28 +35,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function startJob(job) {
-  const stored = await chrome.storage.session.get("downloadState");
-  const latest = stored.downloadState || state;
-  if (latest.running) return { ok: false, error: "A PDF download is already running. Reopen this popup to view its progress." };
-
-  await setState({
-    running: true,
-    phase: "starting",
-    message: `Preparing ${job.pages.length} pages…`,
-    completed: 0,
-    total: job.pages.length,
-    textPages: 0,
-    failures: [],
-    title: job.title,
-    updatedAt: Date.now()
-  });
   await ensureOffscreenDocument();
-  const response = await chrome.runtime.sendMessage({ type: "run-job", job });
+  const response = await chrome.runtime.sendMessage({ type: "enqueue-job", job });
   if (!response?.ok) {
     await setState({ ...state, running: false, phase: "failed", message: response?.error || "The hidden renderer did not start." });
     return { ok: false, error: state.message };
   }
-  return { ok: true };
+  return response;
 }
 
 async function ensureOffscreenDocument() {
@@ -86,6 +73,8 @@ function idleState() {
     total: 0,
     textPages: 0,
     failures: [],
+    queued: [],
+    currentDocumentId: null,
     title: "",
     updatedAt: Date.now()
   };

@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.1 - 2026-09-28
+
+- Fixed downloads that could remain stuck at `Rendering 0 / N pages` when a Scribd asset response stalled.
+- Added the official same-origin embedded-preview flow as a fallback for Scribd document pages.
+- Reused page DOM already rendered by Scribd to avoid unnecessary page-data requests.
+- Added bounded page/image downloads, image-decode timeouts, and regression coverage for stalled assets.
+- Kept the Download button locked with immediate preparation feedback, preventing repeat clicks while the page list and token are loading.
+- Added a deduplicated FIFO document queue so different previews can be added during a download and rendered one at a time.
+
 ## 1.4.0 - 2026-09-28
 
 - Added a custom violet-and-blue extension logo selected from six concepts.

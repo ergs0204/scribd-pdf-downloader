@@ -1,18 +1,60 @@
-let running = false;
+let processingQueue = false;
+let activeDocumentId = null;
+let lastProgress = {
+  running: false,
+  phase: "idle",
+  message: "Ready for a Scribd preview.",
+  completed: 0,
+  total: 0,
+  textPages: 0,
+  failures: [],
+  title: ""
+};
+const pendingJobs = [];
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "run-job") return;
-  if (running) {
-    sendResponse({ ok: false, error: "The hidden renderer is already busy." });
-    return;
-  }
-  running = true;
-  runJob(message.job).catch(async error => {
-    console.error(error);
-    await report({ running: false, phase: "failed", message: error.message });
-  }).finally(() => { running = false; });
-  sendResponse({ ok: true });
+  if (message?.type !== "enqueue-job") return;
+  sendResponse(enqueueJob(message.job));
 });
+
+function enqueueJob(job) {
+  const documentId = String(job?.documentId || "");
+  if (!documentId) return { ok: false, error: "The Scribd document ID is missing." };
+  if (activeDocumentId === documentId || pendingJobs.some(item => String(item.documentId) === documentId)) {
+    return { ok: true, queued: false, duplicate: true };
+  }
+
+  pendingJobs.push(job);
+  const position = processingQueue ? pendingJobs.length : 0;
+  void report({});
+  void processQueue();
+  return { ok: true, queued: true, duplicate: false, position };
+}
+
+async function processQueue() {
+  if (processingQueue) return;
+  processingQueue = true;
+  while (pendingJobs.length) {
+    const job = pendingJobs.shift();
+    activeDocumentId = String(job.documentId);
+    try {
+      await runJob(job);
+    } catch (error) {
+      console.error(error);
+      await report({
+        running: false,
+        phase: "failed",
+        message: error.message,
+        title: job.title,
+        failures: lastProgress.failures || []
+      });
+    } finally {
+      activeDocumentId = null;
+    }
+  }
+  processingQueue = false;
+  await report({ running: false });
+}
 
 async function runJob(job) {
   await report({
@@ -79,12 +121,18 @@ async function runJob(job) {
 }
 
 async function report(update) {
-  await chrome.runtime.sendMessage({ type: "progress-update", update });
+  lastProgress = {
+    ...lastProgress,
+    ...update,
+    currentDocumentId: activeDocumentId,
+    queued: pendingJobs.map(job => ({ documentId: String(job.documentId), title: job.title || `scribd-${job.documentId}` }))
+  };
+  await chrome.runtime.sendMessage({ type: "progress-update", update: lastProgress });
 }
 
 async function buildPage(page, token, quality, styleText) {
   const html = page.inlineHtml || parseJsonp(
-    await fetch(withToken(page.contentUrl, token), { cache: "no-store" }).then(assertOk).then(r => r.text())
+    await fetchBody(withToken(page.contentUrl, token), { cache: "no-store" }, response => response.text(), "Page data")
   );
   const doc = new DOMParser().parseFromString(html, "text/html");
   const images = [...doc.querySelectorAll("img[orig], img[src]")];
@@ -101,8 +149,12 @@ async function buildPage(page, token, quality, styleText) {
     const assetUrl = normalizeAssetUrl(element.getAttribute("orig") || element.getAttribute("src"));
     let bitmap = cache.get(assetUrl);
     if (!bitmap) {
-      const blob = await fetch(withToken(assetUrl, token), { cache: "force-cache" }).then(assertOk).then(r => r.blob());
-      bitmap = await createImageBitmap(blob);
+      const blob = await fetchBody(withToken(assetUrl, token), { cache: "force-cache" }, response => response.blob(), "Page image");
+      bitmap = await withTimeout(
+        createImageBitmap(blob),
+        configuredNumber("__SPDF_IMAGE_TIMEOUT_MS", 20000),
+        "Page image decoding timed out."
+      );
       cache.set(assetUrl, bitmap);
     }
     drawClippedImage(ctx, bitmap, element);
@@ -128,7 +180,7 @@ async function extractTextFragments(html, styleText, page) {
   container.innerHTML = html;
   shadow.append(style, container);
 
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  await waitForLayout();
   await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
 
   const pageElement = shadow.querySelector(".newpage") || container.firstElementChild;
@@ -166,6 +218,14 @@ async function extractTextFragments(html, styleText, page) {
   }
   host.remove();
   return fragments;
+}
+
+async function waitForLayout() {
+  const timeoutMs = configuredNumber("__SPDF_LAYOUT_TIMEOUT_MS", 100);
+  await Promise.race([
+    new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    new Promise(resolve => setTimeout(resolve, timeoutMs))
+  ]);
 }
 
 function drawVisibleText(ctx, fragments) {
@@ -239,8 +299,50 @@ function withToken(value, token) {
 function cssNumber(value) { return Number.parseFloat(value || "0") || 0; }
 
 function assertOk(response) {
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${response.url}`);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}: ${safeUrl(response.url)}`);
   return response;
+}
+
+async function fetchBody(url, options, readBody, label) {
+  const controller = new AbortController();
+  const timeoutMs = configuredNumber("__SPDF_FETCH_TIMEOUT_MS", 20000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = assertOk(await fetch(url, { ...options, signal: controller.signal }));
+    return await readBody(response);
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`${label} timed out after ${Math.ceil(timeoutMs / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    })
+  ]).finally(() => clearTimeout(timer));
+}
+
+function configuredNumber(name, fallback) {
+  const value = Number(globalThis[name]);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function safeUrl(value) {
+  try {
+    const url = new URL(value);
+    url.searchParams.delete("token");
+    return url.href;
+  } catch (_) {
+    return value;
+  }
 }
 
 async function retry(action, attempts) {
@@ -249,7 +351,10 @@ async function retry(action, attempts) {
     try { return await action(); }
     catch (error) {
       last = error;
-      if (n + 1 < attempts) await new Promise(resolve => setTimeout(resolve, 500 * 2 ** n));
+      if (n + 1 < attempts) {
+        const baseDelay = configuredNumber("__SPDF_RETRY_BASE_MS", 500);
+        await new Promise(resolve => setTimeout(resolve, baseDelay * 2 ** n));
+      }
     }
   }
   throw last;
