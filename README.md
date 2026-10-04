@@ -47,7 +47,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### Recommended: GitHub Release
 
 1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.4.1.zip`.
+2. Download `scribd-preview-to-pdf-extension-v1.4.2.zip`.
 3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
 4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 5. Enable **Developer mode**.
@@ -112,6 +112,7 @@ Scribd documents are not all stored the same way:
 | Scanned image or image sprites only | Visually reconstructed image page; text is not selectable |
 | Image plus Scribd text layer | Reconstructed image with selectable built-in text overlay |
 | Scribd text/vector layer | Text rendered visually with a selectable Unicode layer |
+| Scribd document-specific encoded font | Correct visual text rendered with Scribd's embedded font; selectable text is included only when Scribd also supplies real Unicode |
 
 If Scribd does not provide text for a scanned page, this extension does not invent it. Use a separate OCR tool afterward if you personally need searchable scans.
 
@@ -133,7 +134,8 @@ No analytics, advertising SDK, external API, or telemetry is included.
 - Only pages authorized by Scribd for the active browser session can be requested.
 - Signed asset tokens expire; start each export from a live document page.
 - Very large documents are assembled in browser memory and may exceed available RAM.
-- Scribd's custom fonts and unusual vertical or mathematical layouts may render differently from the source.
+- Unusual vertical or mathematical layouts may render differently from the source.
+- Some Scribd font layers use substituted character codes. Their appearance is preserved, but the extension omits those strings from the selectable layer instead of producing garbled copied text.
 - Selectable text quality depends entirely on Scribd's built-in text order and Unicode data.
 - Site changes can break manifest or token parsing; open an issue with non-sensitive reproduction details if that happens.
 

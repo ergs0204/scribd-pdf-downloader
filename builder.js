@@ -49,6 +49,7 @@ async function processQueue() {
         failures: lastProgress.failures || []
       });
     } finally {
+      document.getElementById?.("scribd-document-fonts")?.remove();
       activeDocumentId = null;
     }
   }
@@ -63,6 +64,9 @@ async function runJob(job) {
   });
 
   const output = new Array(job.pages.length);
+  const fontStyleText = await loadDocumentFontStyles(job.fontStylesheets || []);
+  installDocumentFontStyles(fontStyleText);
+  const renderStyleText = `${job.styleText || ""}\n${fontStyleText}`;
   let completed = 0;
   let next = 0;
   let textPageCount = 0;
@@ -74,8 +78,8 @@ async function runJob(job) {
       if (index >= job.pages.length) return;
       const page = job.pages[index];
       try {
-        output[index] = await retry(() => buildPage(page, job.token, job.jpegQuality, job.styleText), 3);
-        if (output[index].texts.length) textPageCount++;
+        output[index] = await retry(() => buildPage(page, job.token, job.jpegQuality, renderStyleText), 3);
+        if (output[index].texts.some(fragment => fragment.selectable !== false)) textPageCount++;
       } catch (error) {
         failures.push({ page: page.pageNum, error: error.message });
       }
@@ -120,6 +124,37 @@ async function runJob(job) {
   setTimeout(() => URL.revokeObjectURL(url), 120000);
 }
 
+async function loadDocumentFontStyles(stylesheetUrls) {
+  const styles = await Promise.all([...new Set(stylesheetUrls)].map(async stylesheetUrl => {
+    const css = await fetchBody(
+      stylesheetUrl,
+      { cache: "force-cache" },
+      response => response.text(),
+      "Document font stylesheet"
+    );
+    return absolutizeCssUrls(css, stylesheetUrl);
+  }));
+  return styles.join("\n");
+}
+
+function absolutizeCssUrls(css, stylesheetUrl) {
+  return css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (_, quote, value) => {
+    if (/^(?:data:|blob:|chrome-extension:)/i.test(value)) return `url(${quote}${value}${quote})`;
+    try { return `url("${new URL(value, stylesheetUrl).href}")`; }
+    catch (_) { return `url(${quote}${value}${quote})`; }
+  });
+}
+
+function installDocumentFontStyles(css) {
+  document.getElementById?.("scribd-document-fonts")?.remove();
+  if (!css?.trim()) return null;
+  const style = document.createElement("style");
+  style.id = "scribd-document-fonts";
+  style.textContent = css;
+  document.head.appendChild(style);
+  return style;
+}
+
 async function report(update) {
   lastProgress = {
     ...lastProgress,
@@ -139,7 +174,7 @@ async function buildPage(page, token, quality, styleText) {
   const texts = await extractTextFragments(html, styleText, page);
   if (!images.length && !texts.length) throw new Error("No image or built-in text data was found.");
 
-  const canvas = new OffscreenCanvas(page.width, page.height);
+  const canvas = createRenderCanvas(page.width, page.height);
   const ctx = canvas.getContext("2d", { alpha: false });
   ctx.fillStyle = "white";
   ctx.fillRect(0, 0, page.width, page.height);
@@ -162,8 +197,29 @@ async function buildPage(page, token, quality, styleText) {
   for (const bitmap of cache.values()) bitmap.close();
 
   drawVisibleText(ctx, texts);
-  const jpeg = await canvas.convertToBlob({ type: "image/jpeg", quality });
+  const jpeg = await renderCanvasToBlob(canvas, "image/jpeg", quality);
   return { width: page.width, height: page.height, bytes: new Uint8Array(await jpeg.arrayBuffer()), texts };
+}
+
+function createRenderCanvas(width, height) {
+  const canvas = document.createElement?.("canvas");
+  if (canvas?.getContext) {
+    canvas.width = width;
+    canvas.height = height;
+    return canvas;
+  }
+  return new OffscreenCanvas(width, height);
+}
+
+async function renderCanvasToBlob(canvas, type, quality) {
+  if (canvas.convertToBlob) return canvas.convertToBlob({ type, quality });
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      blob => blob ? resolve(blob) : reject(new Error("Canvas image encoding failed.")),
+      type,
+      quality
+    );
+  });
 }
 
 async function extractTextFragments(html, styleText, page) {
@@ -181,14 +237,14 @@ async function extractTextFragments(html, styleText, page) {
   shadow.append(style, container);
 
   await waitForLayout();
-  await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
-
   const pageElement = shadow.querySelector(".newpage") || container.firstElementChild;
   const textLayer = shadow.querySelector(".text_layer");
   if (!pageElement || !textLayer) {
     host.remove();
     return [];
   }
+  await loadTextLayerFonts(textLayer);
+  await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
 
   const pageRect = pageElement.getBoundingClientRect();
   const fragments = [];
@@ -213,11 +269,45 @@ async function extractTextFragments(html, styleText, page) {
       family: computed.fontFamily || "sans-serif",
       weight: computed.fontWeight || "400",
       style: computed.fontStyle || "normal",
-      writingMode: computed.writingMode || "horizontal-tb"
+      writingMode: computed.writingMode || "horizontal-tb",
+      selectable: !isDocumentFontFamily(computed.fontFamily)
     });
   }
   host.remove();
   return fragments;
+}
+
+async function loadTextLayerFonts(textLayer) {
+  const requests = new Map();
+  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const text = node.nodeValue?.trim();
+    if (!text || !node.parentElement) continue;
+    const computed = getComputedStyle(node.parentElement);
+    const family = computed.fontFamily?.split(",")[0]?.trim();
+    if (!isDocumentFontFamily(family)) continue;
+    const font = `${computed.fontStyle || "normal"} ${computed.fontWeight || "400"} ${computed.fontSize || "16px"} ${family}`;
+    if (!requests.has(font)) requests.set(font, { font, text });
+  }
+  if (!requests.size) return;
+
+  const timeoutMs = configuredNumber("__SPDF_FONT_TIMEOUT_MS", 8000);
+  const results = await withTimeout(
+    Promise.all([...requests.values()].map(request => document.fonts.load(request.font, request.text))),
+    timeoutMs,
+    "Scribd document fonts timed out."
+  );
+  for (let index = 0; index < results.length; index++) {
+    if (!results[index]?.length) {
+      throw new Error(`Scribd document font ${[...requests.values()][index].font} could not be loaded.`);
+    }
+  }
+}
+
+function isDocumentFontFamily(value) {
+  const family = value?.split(",")[0]?.trim();
+  return /^['"]?ff\d+['"]?$/i.test(family || "");
 }
 
 async function waitForLayout() {
@@ -434,6 +524,7 @@ function makeTextCodec(pages) {
   const characters = new Map();
   for (const page of pages) {
     for (const fragment of page.texts) {
+      if (fragment.selectable === false) continue;
       for (const character of fragment.text) {
         if (!characters.has(character)) {
           if (characters.size >= 65534) throw new Error("The document contains too many unique Unicode characters for one PDF text map.");
@@ -457,6 +548,7 @@ function makePageContent(page, codec, scale) {
   const height = +(page.height * scale).toFixed(3);
   let content = `q\n${width} 0 0 ${height} 0 0 cm\n/Im0 Do\nQ\n`;
   for (const fragment of page.texts) {
+    if (fragment.selectable === false) continue;
     const chars = [...fragment.text].length;
     if (!chars) continue;
     const fontSize = Math.max(1, fragment.height * scale * 0.9);

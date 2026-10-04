@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.2 - 2026-10-04
+
+- Fixed garbled or missing English on previews that use Scribd's document-specific embedded fonts.
+- Added explicit font loading before page rasterization and switched font-bearing pages to a DOM canvas that shares the loaded browser font set.
+- Avoided exposing Scribd's font-encoded glyph strings as incorrect selectable Unicode when the source does not provide a real Unicode mapping.
+- Added regression coverage for stylesheet discovery, relative font URLs, font readiness, DOM-canvas selection, and encoded text layers.
+
 ## 1.4.1 - 2026-09-28
 
 - Fixed downloads that could remain stuck at `Rendering 0 / N pages` when a Scribd asset response stalled.

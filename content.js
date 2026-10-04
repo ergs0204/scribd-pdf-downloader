@@ -33,7 +33,9 @@ async function prepareJob() {
 
   return {
     documentId, title: getTitle(pageSource, documentId), token: tokenResult.token, pages,
-    styleText: `${extractStyleText(pageSource)}\n${extractStyleText(source)}`, concurrency: 6, jpegQuality: 0.92
+    styleText: `${extractStyleText(pageSource)}\n${extractStyleText(source)}`,
+    fontStylesheets: collectFontStylesheetUrls([pageSource, source], document),
+    concurrency: 6, jpegQuality: 0.92
   };
 }
 
@@ -113,4 +115,20 @@ function getTitle(source, documentId) {
 function extractStyleText(source) {
   const parsed = new DOMParser().parseFromString(source, "text/html");
   return [...parsed.querySelectorAll("style")].map(style => style.textContent).join("\n");
+}
+
+function collectFontStylesheetUrls(sources, root) {
+  const urls = new Set();
+  const add = link => {
+    const value = link?.href || link?.getAttribute?.("href");
+    if (!value || !/\/ttfs\.css(?:[?#]|$)/i.test(value)) return;
+    try { urls.add(new URL(value, location.href).href); } catch (_) {}
+  };
+
+  for (const link of root?.querySelectorAll?.('link[rel~="stylesheet"][href]') || []) add(link);
+  for (const source of sources || []) {
+    const parsed = new DOMParser().parseFromString(source, "text/html");
+    for (const link of parsed.querySelectorAll('link[rel~="stylesheet"][href]')) add(link);
+  }
+  return [...urls];
 }
