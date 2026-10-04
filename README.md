@@ -47,7 +47,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### Recommended: GitHub Release
 
 1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.4.2.zip`.
+2. Download `scribd-preview-to-pdf-extension-v1.4.3.zip`.
 3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
 4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 5. Enable **Developer mode**.

@@ -231,50 +231,67 @@ async function extractTextFragments(html, styleText, page) {
   document.body.appendChild(host);
   const shadow = host.attachShadow({ mode: "closed" });
   const style = document.createElement("style");
-  style.textContent = `${styleText || ""}\n.newpage{position:relative!important;margin:0!important;} .text_layer{transform-origin:top left!important;}`;
+  style.textContent = `${styleText || ""}\n.newpage{position:relative!important;margin:0!important;transform:none!important;} .text_layer{transform-origin:top left!important;}`;
   const container = document.createElement("div");
   container.innerHTML = html;
   shadow.append(style, container);
 
-  await waitForLayout();
-  const pageElement = shadow.querySelector(".newpage") || container.firstElementChild;
-  const textLayer = shadow.querySelector(".text_layer");
-  if (!pageElement || !textLayer) {
-    host.remove();
-    return [];
-  }
-  await loadTextLayerFonts(textLayer);
-  await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
+  try {
+    await waitForLayout();
+    const pageElement = shadow.querySelector(".newpage") || container.firstElementChild;
+    const textLayer = shadow.querySelector(".text_layer");
+    if (!pageElement || !textLayer) return [];
+    await loadTextLayerFonts(textLayer);
+    await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
 
-  const pageRect = pageElement.getBoundingClientRect();
-  const fragments = [];
-  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
-  while (walker.nextNode()) {
-    const node = walker.currentNode;
-    const text = node.nodeValue;
-    if (!text || !text.trim()) continue;
-    const range = document.createRange();
-    range.selectNodeContents(node);
-    const rect = range.getBoundingClientRect();
-    range.detach();
-    if (!rect.width || !rect.height) continue;
-    const computed = getComputedStyle(node.parentElement);
-    fragments.push({
-      text,
-      x: rect.left - pageRect.left,
-      y: rect.top - pageRect.top,
-      width: rect.width,
-      height: rect.height,
-      color: visibleColor(computed.color),
-      family: computed.fontFamily || "sans-serif",
-      weight: computed.fontWeight || "400",
-      style: computed.fontStyle || "normal",
-      writingMode: computed.writingMode || "horizontal-tb",
-      selectable: !isDocumentFontFamily(computed.fontFamily)
-    });
+    const pageRect = pageElement.getBoundingClientRect();
+    const fragments = [];
+    const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.nodeValue;
+      if (!text || !text.trim()) continue;
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      if (!rect.width || !rect.height) continue;
+      const computed = getComputedStyle(node.parentElement);
+      fragments.push({
+        text,
+        x: rect.left - pageRect.left,
+        y: rect.top - pageRect.top,
+        width: rect.width,
+        height: rect.height,
+        color: visibleColor(computed.color),
+        family: computed.fontFamily || "sans-serif",
+        weight: computed.fontWeight || "400",
+        style: computed.fontStyle || "normal",
+        ...textCanvasMetrics(node.parentElement, pageElement, computed),
+        writingMode: computed.writingMode || "horizontal-tb",
+        selectable: !isDocumentFontFamily(computed.fontFamily)
+      });
+    }
+    return fragments;
+  } finally {
+    host.remove();
   }
-  host.remove();
-  return fragments;
+}
+
+function textCanvasMetrics(element, pageElement, computed) {
+  let scale = 1;
+  for (let current = element; current && current !== pageElement; current = current.parentElement) {
+    const matrix = getComputedStyle(current).transform?.match(/^matrix\(([^)]+)\)$/);
+    if (matrix) {
+      const values = matrix[1].split(",").map(Number);
+      scale *= Math.hypot(values[0], values[1]);
+    }
+  }
+  return {
+    fontSize: cssNumber(computed.fontSize) * scale,
+    letterSpacing: cssNumber(computed.letterSpacing) * scale,
+    wordSpacing: cssNumber(computed.wordSpacing) * scale
+  };
 }
 
 async function loadTextLayerFonts(textLayer) {
@@ -320,10 +337,12 @@ async function waitForLayout() {
 
 function drawVisibleText(ctx, fragments) {
   for (const fragment of fragments) {
-    const size = Math.max(1, fragment.height * 0.9);
+    const size = Math.max(1, fragment.fontSize || fragment.height * 0.9);
     ctx.save();
     ctx.fillStyle = fragment.color;
     ctx.font = `${fragment.style} ${fragment.weight} ${size}px ${fragment.family}`;
+    ctx.letterSpacing = `${fragment.letterSpacing || 0}px`;
+    ctx.wordSpacing = `${fragment.wordSpacing || 0}px`;
     ctx.textBaseline = "top";
     if (fragment.writingMode.startsWith("vertical")) {
       ctx.translate(fragment.x + fragment.width, fragment.y);

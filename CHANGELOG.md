@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.3 - 2026-10-04
+
+- Fixed the remaining visible gibberish in documents such as `507619928/B-tree-dbms`: the export job now carries the font-family rules that Scribd generates from `docManager.addFont(...)`, not just the font files.
+- Discovers the document font stylesheet from built-in metadata even before the live preview loads it. No OCR or external font substitution.
+- Removes live-preview zoom from export coordinates and preserves source font sizes, letter spacing, and word spacing.
+- Cleans up offscreen layout nodes even when font loading fails.
+- Verified the complete 22-page document through the real preparation/render/PDF pipeline with six workers. Cold-start/zoomed and normal exports are byte-identical; all pages were visually inspected.
+- Added preparation-path regression tests and an opt-in browser integration runner, alongside the existing queue and timeout tests.
+
 ## 1.4.2 - 2026-10-04
 
 - Fixed garbled or missing English on previews that use Scribd's document-specific embedded fonts.

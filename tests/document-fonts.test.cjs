@@ -50,6 +50,24 @@ test("official previews retain Scribd's document-specific font stylesheet", () =
   ]);
 });
 
+test("real preparation carries dynamically declared font families without a live font link", async () => {
+  const preview = `docManager.assetPrefix = "example-prefix";
+    docManager.fontAggregatorHosts = ["https://html.scribdassets.com"];
+    docManager.addFont(6, "", "ff6", "Georgia1, Georgia, serif", "normal", "normal");
+    docManager.addFont(4, "b", "ff4", "Trebuchet MS1, Helvetica, sans-serif", "bold", "normal");
+    docManager.addPage({pageNum:1,origWidth:902,origHeight:507,innerPageElem:document.getElementById("page1")});`;
+  const page = {outerHTML:'<div id="page1" class="newpage"><div class="text_layer"><div class="ff6"><span>Kete</span></div></div></div>'};
+  const sandbox = loadScript("content.js", {
+    DOMParser: class { parseFromString() { return {getElementById(){return page;},querySelectorAll(){return [];}}; } },
+    document: {getElementById(){return page;},querySelectorAll(){return [];}},
+    fetch: async url => ({ok:true,text:async()=>preview,json:async()=>String(url).includes('csrf_token')?{csrf_token:'test'}:{token:'test'}})
+  });
+  const job = await sandbox.prepareJob();
+  assert.match(job.styleText, /div\.ff6 span\{font-family:ff6,Georgia1, Georgia, serif/);
+  assert.match(job.styleText, /div\.ff4 span\{.*font-weight:bold/);
+  assert.deepEqual(Array.from(job.fontStylesheets), ['https://html.scribdassets.com/example-prefix/6,b4/12/ttfs.css']);
+});
+
 test("offscreen renderer loads font CSS and resolves its relative font URLs", async () => {
   const requested = [];
   const sandbox = loadScript("builder.js", {
@@ -157,4 +175,20 @@ test("font-encoded glyph strings are not exposed as incorrect selectable Unicode
 
   assert.equal(codec.characters.has("K"), false);
   assert.equal(codec.characters.has("N"), true);
+});
+
+test("canvas metrics preserve Scribd's 5x text scale and per-span spacing", () => {
+  const page = {transform:"matrix(0.75, 0, 0, 0.75, 0, 0)"};
+  const layer = {parentElement:page,transform:"matrix(0.2, 0, 0, 0.2, 0, 0)"};
+  const span = {parentElement:layer,transform:"none"};
+  const sandbox = loadScript("builder.js", {getComputedStyle:el=>el});
+  const metrics = sandbox.textCanvasMetrics(span,page,{fontSize:"138px",letterSpacing:"2px",wordSpacing:"-6px"});
+  assert.equal(metrics.fontSize,27.6);
+  assert.equal(metrics.letterSpacing,0.4);
+  assert.ok(Math.abs(metrics.wordSpacing + 1.2)<1e-9);
+  const draws=[];
+  const ctx={save(){},restore(){},fillText(...args){draws.push({args,font:this.font,letterSpacing:this.letterSpacing,wordSpacing:this.wordSpacing});}};
+  sandbox.drawVisibleText(ctx,[{...metrics,text:'encoded',height:32,width:100,x:1,y:2,color:'#000',family:'ff6',style:'normal',weight:'400',writingMode:'horizontal-tb'}]);
+  assert.equal(draws[0].font,'normal 400 27.6px ff6');
+  assert.equal(draws[0].letterSpacing,'0.4px');
 });

@@ -3,3 +3,5 @@
 *.har
 .DS_Store
 Thumbs.db
+tmp/
+tmp-*.png

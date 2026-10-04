@@ -31,10 +31,13 @@ async function prepareJob() {
     body: "{}"
   }).then(assertOk).then(r => r.json());
 
+  const fontData = collectDeclaredFonts([pageSource, source]);
+  const linkedFonts = collectFontStylesheetUrls([pageSource, source], document);
+
   return {
     documentId, title: getTitle(pageSource, documentId), token: tokenResult.token, pages,
-    styleText: `${extractStyleText(pageSource)}\n${extractStyleText(source)}`,
-    fontStylesheets: collectFontStylesheetUrls([pageSource, source], document),
+    styleText: `${extractStyleText(pageSource)}\n${extractStyleText(source)}\n${fontData.styleText}`,
+    fontStylesheets: linkedFonts.length ? linkedFonts : fontData.stylesheets,
     concurrency: 6, jpegQuality: 0.92
   };
 }
@@ -131,4 +134,31 @@ function collectFontStylesheetUrls(sources, root) {
     for (const link of parsed.querySelectorAll('link[rel~="stylesheet"][href]')) add(link);
   }
   return [...urls];
+}
+
+// Scribd generates these family assignments at runtime; ttfs.css only supplies
+// the font faces. Parse literal metadata, never execute document scripts.
+function collectDeclaredFonts(sources) {
+  const rules = new Set();
+  const stylesheets = new Set();
+  const literal = '"(?:\\\\.|[^"\\\\])*"';
+  const declaration = new RegExp(`docManager\\.addFont\\(\\s*(\\d+)\\s*,\\s*(${literal})\\s*,\\s*(${literal})\\s*,\\s*(${literal})\\s*,\\s*(${literal})\\s*,\\s*(${literal})\\s*\\)`, "g");
+  for (const source of sources) {
+    const codes = [];
+    for (const match of source.matchAll(declaration)) {
+      try {
+        const [shortStyle, family, fallback, weight, style] = match.slice(2).map(value => JSON.parse(value));
+        if (!/^ff\d+$/.test(family) || !/^[bi]*$/.test(shortStyle) ||
+            !/^[\w\s,'"-]+$/.test(fallback) || !/^(normal|bold|[1-9]00)$/.test(weight) ||
+            !/^(normal|italic|oblique)$/.test(style)) continue;
+        rules.add(`div.${family} span{font-family:${family},${fallback};font-weight:${weight};font-style:${style};}`);
+        codes.push(`${shortStyle}${Number(match[1])}`);
+      } catch (_) {}
+    }
+    const prefix = source.match(/docManager\.assetPrefix\s*=\s*"([\w-]+)"/)?.[1];
+    if (prefix && codes.length) {
+      stylesheets.add(`https://html.scribdassets.com/${prefix}/${[...new Set(codes)].sort().join(",")}/12/ttfs.css`);
+    }
+  }
+  return { styleText: [...rules].join("\n"), stylesheets: [...stylesheets] };
 }
