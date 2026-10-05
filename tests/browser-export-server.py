@@ -65,7 +65,7 @@ class Handler(BaseHTTPRequestHandler):
                 if ROOT not in file.parents or not file.is_file():
                     self.respond("Not found", "text/plain", 404)
                     return
-                mime = "text/html" if file.suffix == ".html" else "text/javascript"
+                mime = "application/pdf" if file.suffix == ".pdf" else "text/html" if file.suffix == ".html" else "text/javascript"
                 self.respond(file.read_bytes(), mime)
         except Exception as error:
             self.respond(type(error).__name__, "text/plain", 500)

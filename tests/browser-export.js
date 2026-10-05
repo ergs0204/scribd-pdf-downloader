@@ -19,6 +19,7 @@ window.chrome = {runtime:{
       return {ok:true};
     }
     if(message.type === "save-pdf") {
+      if(window.__geometrySave) await window.__geometrySave;
       const blob = await originalFetch(message.url).then(r=>r.blob());
       return originalFetch("/save?name=full-export.pdf",{method:"POST",body:blob}).then(r=>r.json());
     }
@@ -49,9 +50,20 @@ async function runFullExport() {
     link.href=`https://html.scribdassets.com/${prefix}/${ids.join(',')}/12/ttfs.css`;
     if(!new URLSearchParams(location.search).has("cold")) root.append(link);
     const job = await prepareJob();
+    const originalMakePdf = makePdf;
+    makePdf = pages => {
+      const geometry = pages.map(page => ({width:page.width,height:page.height,texts:page.texts
+        .filter(fragment=>fragment.selectable!==false)
+        .map(({copyText,text,x,y,width,height,characterBoxes})=>({text:copyText??text,x,y,width,height,characterBoxes}))}));
+      window.__geometrySave=originalFetch('/save?name=selection-geometry.json',{method:'POST',body:JSON.stringify(geometry)});
+      return originalMakePdf(pages);
+    };
     window.__preparedJob = job;
     document.querySelector("#details").textContent=JSON.stringify({pages:job.pages.length,fontStylesheets:job.fontStylesheets.length,containsFontFamilyRules:/div\.ff6\s+span/.test(job.styleText)},null,2);
     await runJob(job);
+    document.querySelector("#details").textContent += `\n${JSON.stringify({textPages:lastProgress.textPages,decodedTextPages:lastProgress.decodedTextPages,unresolvedTextPages:lastProgress.unresolvedTextPages})}`;
+    if(lastProgress.textPages !== 22) throw new Error("Missing preview text in exported pages");
+    if(lastProgress.decodedTextPages !== 22) throw new Error("Missing decoded font text in exported pages");
     document.body.dataset.done="true";
   } catch(error) {
     document.querySelector("#status").textContent=`FAIL: ${error.message.replace(/token=[^&\s]+/g,'token=<REDACTED>')}`;

@@ -32,7 +32,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 - **Deduplicated document queue** - Add other previews while one PDF is rendering; documents run one at a time and the same document cannot be queued twice.
 - **Concurrent downloads** - Six workers fetch pages with bounded retries.
 - **Sprite reconstruction** - Reassembles Scribd's clipped page-image sprites at their correct positions.
-- **Selectable text when available** - Preserves Scribd's own Unicode text layer without external OCR.
+- **Selectable text when available** - Preserves Scribd's own Unicode text and decodes supported scrambled font layers using the supplied font data, without OCR.
 - **Exact page order and dimensions** - Uses the source manifest rather than guessing from scroll position.
 - **Local processing** - Page reconstruction and PDF assembly happen in your browser.
 
@@ -47,7 +47,7 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 ### Recommended: GitHub Release
 
 1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.4.3.zip`.
+2. Download `scribd-preview-to-pdf-extension-v1.4.4.zip`.
 3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
 4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 5. Enable **Developer mode**.
@@ -89,7 +89,7 @@ No page-by-page scrolling is required.
 | Saving | Opening the browser's normal Save dialog |
 | Complete | The download has started |
 
-The popup also reports how many pages contain Scribd-provided selectable text.
+The popup also reports selectable-text pages, pages with decoded font text, and any unresolved custom-font text omitted from copying.
 
 ## How it works
 
@@ -98,7 +98,7 @@ The popup also reports how many pages contain Scribd-provided selectable text.
 3. **Session token refresh** - Uses Scribd's CSRF and document-token endpoints in your existing browser session.
 4. **Concurrent page loading** - Fetches JSONP page descriptions and their authorized assets with retries.
 5. **Page reconstruction** - Draws each clipped image sprite into its correct page coordinates.
-6. **Built-in text preservation** - Reads Scribd's positioned `text_layer` when present and writes an invisible Unicode mapping into the PDF for selection and copying.
+6. **Built-in text preservation** - Reads Scribd's positioned `text_layer` and supplied subset-font character maps. For supported scrambled fonts, glyph ordering recovers a unique document-specific character permutation. Original codes still draw the visual page; decoded Unicode goes into the invisible PDF layer for selection and copying. Ambiguous or conflicting mappings are never guessed.
 7. **Local PDF assembly** - Creates the final PDF in a hidden extension document and hands it to the browser download manager.
 
 The extension does not create a headless Scribd session, scrape your cookies, upload documents to another service, or run OCR.
@@ -112,7 +112,8 @@ Scribd documents are not all stored the same way:
 | Scanned image or image sprites only | Visually reconstructed image page; text is not selectable |
 | Image plus Scribd text layer | Reconstructed image with selectable built-in text overlay |
 | Scribd text/vector layer | Text rendered visually with a selectable Unicode layer |
-| Scribd document-specific encoded font | Correct visual text rendered with Scribd's embedded font; selectable text is included only when Scribd also supplies real Unicode |
+| Supported Scribd scrambled subset font | Original visual glyphs plus readable, selectable text decoded from the supplied font metadata |
+| Unresolved custom font or private-use symbol | Visual appearance preserved; unresolved fragments omitted from copying |
 
 If Scribd does not provide text for a scanned page, this extension does not invent it. Use a separate OCR tool afterward if you personally need searchable scans.
 
@@ -135,8 +136,9 @@ No analytics, advertising SDK, external API, or telemetry is included.
 - Signed asset tokens expire; start each export from a live document page.
 - Very large documents are assembled in browser memory and may exceed available RAM.
 - Unusual vertical or mathematical layouts may render differently from the source.
-- Some Scribd font layers use substituted character codes. Their appearance is preserved, but the extension omits those strings from the selectable layer instead of producing garbled copied text.
-- Selectable text quality depends entirely on Scribd's built-in text order and Unicode data.
+- Font decoding currently supports a shared low-nibble permutation in the ASCII range `0x30–0x6F`, recoverable from Unicode SFNT cmap formats 4/12 and subset glyph order. It is not a universal decoder for every font encoding. Unsupported fonts or ambiguous mappings are omitted from the copy layer, with a popup warning.
+- Private-use symbol glyphs can remain visible without a copyable equivalent. Text contained only inside images remains image-only.
+- Selectable text quality and reading order depend on Scribd's positioned fragments; this does not reconstruct semantic paragraphs or fix source typos.
 - Site changes can break manifest or token parsing; open an issue with non-sensitive reproduction details if that happens.
 
 ## Troubleshooting
@@ -160,7 +162,11 @@ That is fine. Rendering continues in the hidden extension document. Click the ex
 
 ### Text cannot be selected
 
-That page is probably image-only. Selectable text is added only when Scribd supplies a built-in `text_layer`; this project intentionally does not run OCR.
+The page may be image-only, or its custom font may not have a reliable decoder. Check the popup's selectable/decoded page counts and unresolved-text warning. This project intentionally does not run OCR.
+
+### Copied text is still garbled in an old PDF
+
+Reload the extension and confirm version **1.4.4** or newer, reload the document tab, then export a new PDF. Updating the extension does not repair files downloaded with an older version.
 
 ## Development
 

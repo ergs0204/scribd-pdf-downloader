@@ -96,7 +96,11 @@ function setDisplay(state) {
   if (state.queued?.length) parts.push(`${state.queued.length} queued`);
   if (state.sizeMiB) parts.push(`${state.sizeMiB} MiB`);
   if (state.title) parts.push(state.title);
+  if (state.decodedTextPages) parts.push(`${state.decodedTextPages} with decoded font text`);
   details.textContent = parts.join(" • ");
+  if (state.unresolvedTextPages) {
+    details.textContent += `\nSome custom-font text on ${state.unresolvedTextPages} pages could not be decoded reliably and was omitted from copying. Its appearance is preserved.`;
+  }
   button.disabled = preparing;
   button.textContent = preparing
     ? "Preparing download…"

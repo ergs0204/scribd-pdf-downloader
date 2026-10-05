@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.4 - 2026-10-05
+
+- Fixed copied gibberish from supported Scribd scrambled subset fonts: supplied font cmap/glyph-order metadata now recovers a unique document-specific ASCII permutation. No OCR, external recognition service, or hardcoded document key.
+- Kept original encoded strings for visual rendering and wrote decoded Unicode into the separate invisible PDF copy layer.
+- Fixed selection bounds using measured per-character preview ranges and a tiny embedded geometry-only font for the invisible layer, preventing viewer fallback fonts from expanding or shifting highlights. Visible Scribd fonts/images are unchanged.
+- Fixed extra spaces such as `Pre pare d b y` in older PDF.js viewers. Character widths now use font advance metrics at a stable em scale; incompatible widths use separate reusable subsets, and collapsed spaces retain sensible nominal metrics. Verified with PDF.js 3 and 6, PDFium, and pypdf.
+- Added bounded SFNT cmap format 4/12 parsing; ambiguous, conflicting, unsupported, and private-use mappings fail closed instead of yielding guessed text.
+- Added popup counts for decoded pages and warnings for unresolved custom-font fragments.
+- Verified readable headings, paragraphs, and numeric sequences in the complete 22-page `507619928/B-tree-dbms` export. All rendered image streams are unchanged; normal and cold/zoomed PDFs match exactly. Unresolved symbol glyphs remain visual-only.
+- Added decoder/parser regressions and an opt-in real-PDF text/appearance verification command.
+
 ## 1.4.3 - 2026-10-04
 
 - Fixed the remaining visible gibberish in documents such as `507619928/B-tree-dbms`: the export job now carries the font-family rules that Scribd generates from `docManager.addFont(...)`, not just the font files.

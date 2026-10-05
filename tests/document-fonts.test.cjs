@@ -13,6 +13,7 @@ function loadScript(name, extra = {}) {
     Promise,
     TextEncoder,
     Uint8Array,
+    atob,
     URL,
     chrome: { runtime: { onMessage: { addListener() {} } } },
     console,
@@ -164,7 +165,120 @@ test("font-bearing pages prefer a DOM canvas that shares document fonts", () => 
   assert.equal(canvas.height, 507);
 });
 
-test("font-encoded glyph strings are not exposed as incorrect selectable Unicode", () => {
+test("custom-font text keeps encoded visual glyphs but copies decoded Unicode", async () => {
+  const page = {getBoundingClientRect(){return {left:0,top:0};}};
+  const layer = {parentElement:page};
+  const span = {parentElement:layer};
+  const node = {nodeValue:'C+ [rnns',parentElement:span};
+  const sandbox = loadScript("builder.js", {
+    NodeFilter:{SHOW_TEXT:4},
+    requestAnimationFrame:callback=>callback(),
+    getComputedStyle:el=>el===span ? {fontFamily:'ff0, Comic Sans MS, cursive',fontSize:'100px',transform:'none',writingMode:'horizontal-tb'} : {transform:'matrix(0.2, 0, 0, 0.2, 0, 0)'},
+    document:{
+      body:{appendChild(){}},fonts:{ready:Promise.resolve(),load:async()=>[{}]},
+      createElement(){return {style:{},remove(){},attachShadow(){return {append(){},querySelector:selector=>selector==='.newpage'?page:layer};}};},
+      createTreeWalker(){let done=false;return {currentNode:node,nextNode(){if(done)return false;done=true;return true;}};},
+      createRange(){return {selectNodeContents(){},detach(){},getBoundingClientRect(){return {left:10,top:20,width:160,height:25};}};}
+    }
+  });
+  const decoder = {inverse:[15,0,11,2,6,1,3,14,13,12,8,4,9,10,5,7],families:new Set(['ff0'])};
+  const fragments = await sandbox.extractTextFragments('<div>fixture</div>','',{width:902,height:507},decoder);
+  assert.equal(fragments[0].text,'C+ [rnns');
+  assert.equal(fragments[0].copyText,'B+ Trees');
+  assert.equal(fragments[0].selectable,true);
+  assert.equal(fragments[0].decoded,true);
+  const codec = sandbox.makeTextCodec([{texts:fragments}]);
+  assert.ok(codec.characters.has('B'));
+  assert.equal(codec.characters.has('['),false);
+  assert.match(sandbox.makePageContent({width:902,height:507,texts:fragments},codec,0.75),/Tj/);
+});
+
+test("font decoder recovers a unique permutation from subset glyph ordering, not a fixed key", () => {
+  const sandbox = loadScript('builder.js');
+  for(const key of [[1,5,3,6,11,14,4,15,10,12,13,2,9,8,7,0],[15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0]]) {
+    const cmap=key.map((n,index)=>({code:0x60+n,glyph:index+1}));
+    const decoder=sandbox.inferFontTextDecoder([{family:'ff6',cmap}]);
+    assert.ok(decoder);
+    const encoded=[..."Data records 0123456789"].map(c=>{const cp=c.codePointAt(0);return cp>=0x30&&cp<0x70?String.fromCharCode((cp&~15)|key[cp&15]):c;}).join('');
+    assert.equal(sandbox.decodeFontText(encoded,'ff6',decoder).copyText,'Data records 0123456789');
+  }
+});
+
+test('decoder combines partial subset ordering across fonts for 100 distinct keys', () => {
+  const sandbox=loadScript('builder.js');
+  let seed=519;
+  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed;};
+  for(let run=0;run<100;run++) {
+    const key=Array.from({length:16},(_,i)=>i);
+    for(let i=15;i>0;i--){const j=random()%(i+1);[key[i],key[j]]=[key[j],key[i]];}
+    const fonts=Array.from({length:15},(_,i)=>({family:`ff${i}`,cmap:[{code:0x60+key[i],glyph:1},{code:0x60+key[i+1],glyph:2}]}));
+    const decoder=sandbox.inferFontTextDecoder(fonts);
+    assert.ok(decoder);
+    assert.deepEqual(Array.from(decoder.inverse),Array.from({length:16},(_,i)=>key.indexOf(i)));
+  }
+});
+
+test("ambiguous and conflicting font mappings cannot silently copy guessed strings", () => {
+  const sandbox=loadScript('builder.js');
+  assert.equal(sandbox.inferFontTextDecoder([{family:'ff6',cmap:[{code:97,glyph:1},{code:98,glyph:2}]}]),null);
+  const first=Array.from({length:16},(_,i)=>({code:96+i,glyph:i+1}));
+  assert.equal(sandbox.inferFontTextDecoder([{family:'ff0',cmap:first},{family:'ff6',cmap:first.map(x=>({...x,glyph:17-x.glyph}))}]),null);
+  const result=sandbox.decodeFontText('C+ [rnns','ff0',null);
+  assert.equal(result.selectable,false);
+  assert.equal(sandbox.decodeFontText('Normal 中文','Arial',null).copyText,'Normal 中文');
+  const decoder=sandbox.inferFontTextDecoder([{family:'ff0',cmap:first}]);
+  assert.equal(sandbox.decodeFontText('Normal 中文 😀','ff0',decoder).copyText,'Normal 中文 😀');
+  assert.equal(sandbox.decodeFontText('\uF0B7','ff0',decoder).selectable,false);
+});
+
+function sfntFixture(format, rangeOffset = false) {
+  const bytes = Buffer.alloc(160);
+  bytes.writeUInt32BE(0x10000, 0); bytes.writeUInt16BE(1, 4);
+  bytes.write('cmap', 12); bytes.writeUInt32BE(28, 20); bytes.writeUInt32BE(132, 24);
+  bytes.writeUInt16BE(1, 30); bytes.writeUInt16BE(3, 32);
+  bytes.writeUInt16BE(format === 12 ? 10 : 1, 34); bytes.writeUInt32BE(12, 36);
+  bytes.writeUInt16BE(format, 40);
+  if (format === 4) {
+    bytes.writeUInt16BE(rangeOffset ? 40 : 32, 42); bytes.writeUInt16BE(4, 46);
+    bytes.writeUInt16BE(0x31, 54); bytes.writeUInt16BE(0xffff, 56);
+    bytes.writeUInt16BE(0x30, 60); bytes.writeUInt16BE(0xffff, 62);
+    bytes.writeUInt16BE(rangeOffset ? 2 : 0xffd1, 64); bytes.writeUInt16BE(1, 66);
+    if (rangeOffset) {
+      bytes.writeUInt16BE(4, 68); bytes.writeUInt16BE(5, 72); bytes.writeUInt16BE(0, 74);
+    }
+  } else {
+    bytes.writeUInt32BE(28, 44); bytes.writeUInt32BE(1, 52);
+    bytes.writeUInt32BE(0x30, 56); bytes.writeUInt32BE(0x31, 60); bytes.writeUInt32BE(7, 64);
+  }
+  return bytes;
+}
+
+test('bounded SFNT parser handles cmap 4 delta/range-offset and cmap 12', () => {
+  const sandbox=loadScript('builder.js');
+  const read=bytes=>JSON.parse(JSON.stringify(sandbox.readSfntCmap(bytes)));
+  assert.deepEqual(read(sfntFixture(4)),[{code:48,glyph:1},{code:49,glyph:2}]);
+  assert.deepEqual(read(sfntFixture(4,true)),[{code:48,glyph:7}]);
+  assert.deepEqual(read(sfntFixture(12)),[{code:48,glyph:7},{code:49,glyph:8}]);
+  assert.deepEqual(read(sfntFixture(4).subarray(0,60)),[]);
+  const malformed=sfntFixture(4); malformed.writeUInt16BE(0xffff,46);
+  assert.deepEqual(read(malformed),[]);
+  const badOffset=sfntFixture(4,true); badOffset.writeUInt16BE(0xffff,68);
+  assert.deepEqual(read(badOffset),[]);
+  assert.deepEqual(read(Buffer.from('not a font')),[]);
+});
+
+test('font CSS decodes only supported document data fonts', () => {
+  const sandbox=loadScript('builder.js');
+  const css=`@font-face{font-family:ff0;src:url("data:font/opentype;base64,${sfntFixture(4).toString('base64')}")}`;
+  const fonts=sandbox.documentFontCmaps(css);
+  assert.equal(fonts.length,1);
+  assert.equal(fonts[0].family,'ff0');
+  assert.equal(fonts[0].cmap[0].glyph,1);
+  assert.equal(sandbox.documentFontCmaps('@font-face{font-family:ff1;src:url(data:font/ttf;base64,AAAA)}').length,0);
+  assert.equal(sandbox.documentFontCmaps('@font-face{font-family:ff1;src:url(https://example.com/font.ttf)}').length,0);
+});
+
+test("an explicit excluded fragment is still omitted from the PDF text map", () => {
   const sandbox = loadScript("builder.js");
   const makeCodec = vm.runInContext("makeTextCodec", sandbox);
 

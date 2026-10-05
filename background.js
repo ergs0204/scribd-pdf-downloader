@@ -72,6 +72,8 @@ function idleState() {
     completed: 0,
     total: 0,
     textPages: 0,
+    decodedTextPages: 0,
+    unresolvedTextPages: 0,
     failures: [],
     queued: [],
     currentDocumentId: null,
