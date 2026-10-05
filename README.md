@@ -4,37 +4,48 @@
 
 # Scribd Preview to PDF
 
-**One-click PDF export for Scribd pages you can already access.**
+**Export Scribd pages into PDF — directly in your browser.**
 
-[![Release](https://img.shields.io/github/v/release/ergs0204/scribd-pdf-downloader?display_name=tag&sort=semver)](../../releases/latest)
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)](#installation)
-[![Edge Compatible](https://img.shields.io/badge/Edge-Compatible-0078D7?logo=microsoftedge&logoColor=white)](#installation)
+[![Latest Release](https://img.shields.io/github/v/release/ergs0204/scribd-pdf-downloader?display_name=tag&sort=semver)](../../releases/latest)
+[![Chrome / Edge](https://img.shields.io/badge/Chrome%20%2F%20Edge-Manifest%20V3-4285F4?logo=googlechrome&logoColor=white)](#installation)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Local Processing](https://img.shields.io/badge/Processing-100%25%20Local-success)](#privacy-and-permissions)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy_Me_a_Coffee-Support-FFDD00?logo=buymeacoffee&logoColor=000)](https://buymeacoffee.com/ergs02046)
 
-No scrolling. No copied tokens. No OCR service. Open a document, click the extension, and follow the live progress.
+**No manual scrolling · No copied tokens · No OCR service · No external processing**
+
 
 [Download the latest release](../../releases/latest) · [Report a bug](../../issues/new)
 
 </div>
 
 > [!IMPORTANT]
-> This is a personal-use tool. It is not affiliated with, endorsed by, or supported by Scribd. Use it only for documents you are authorized to access and save, and respect copyright law and Scribd's terms.
+> This project is not affiliated with or endorsed by Scribd. Only export content you are authorized to access and save, and respect copyright law and Scribd's terms.
+
+---
+
+## Demo
+
+
+<div align="center">
+  <img src="assets/demo.gif" alt="Scribd Preview to PDF demo" width="760">
+</div>
+
+Open a supported Scribd document, click the extension, and start the export.
+
+The extension discovers the available pages, reconstructs them locally, preserves selectable text when possible, and saves the finished PDF through your browser.
 
 ## Features
 
-- **One-click export** - Start from the extension popup.
-- **Official Scribd pages** - Supports both `/document/...` and legacy `/doc/...` URLs.
-- **Embedded previews** - Detects Scribd previews inside other websites, including [scribdvdownloader.com](https://scribdvdownloader.com/).
-- **No manual scrolling** - Reads Scribd's complete built-in page manifest directly.
-- **Background rendering** - A hidden extension document keeps working after the popup closes.
-- **Global progress** - Reopen the popup at any time to see rendered pages, selectable-text pages, failures, assembly, and save status.
-- **Deduplicated document queue** - Add other previews while one PDF is rendering; documents run one at a time and the same document cannot be queued twice.
-- **Concurrent downloads** - Six workers fetch pages with bounded retries.
-- **Sprite reconstruction** - Reassembles Scribd's clipped page-image sprites at their correct positions.
-- **Selectable text when available** - Preserves Scribd's own Unicode text and decodes supported scrambled font layers using the supplied font data, without OCR.
-- **Exact page order and dimensions** - Uses the source manifest rather than guessing from scroll position.
-- **Local processing** - Page reconstruction and PDF assembly happen in your browser.
+- **One-click PDF export** — Start directly from the extension popup.
+- **No manual scrolling** — Discovers available pages from Scribd's built-in document manifest.
+- **Accurate page reconstruction** — Preserves page order, dimensions, and clipped image-sprite layout.
+- **Selectable text when available** — Keeps Scribd's own text layer and decodes supported scrambled subset fonts without OCR.
+- **Background processing** — Close the popup while rendering continues, then reopen it to check progress.
+- **Download queue** — Queue multiple documents and process them one at a time without duplicates.
+- **Automatic retries** — Fetches page assets concurrently and retries temporary failures.
+- **Local processing** — Page reconstruction and PDF assembly happen entirely in your browser.
+- **No analytics or telemetry** — No advertising SDK, tracking service, or external document-processing API.
 
 ## Requirements
 
@@ -46,21 +57,28 @@ No scrolling. No copied tokens. No OCR service. Open a document, click the exten
 
 ### Recommended: GitHub Release
 
-1. Open [Releases](../../releases/latest).
-2. Download `scribd-preview-to-pdf-extension-v1.4.4.zip`.
-3. Extract the ZIP to a permanent folder. Do not load the ZIP itself.
-4. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
-5. Enable **Developer mode**.
-6. Click **Load unpacked** and select the extracted `scribd-preview-to-pdf` folder.
-7. Pin **Scribd Preview to PDF** to the browser toolbar.
+1. Open the [latest release](../../releases/latest).
+2. Download the extension `.zip` file attached to the release.
+3. Extract it to a permanent folder.
+4. Do **not** load the ZIP file directly.
+5. Open:
+   - `chrome://extensions` in Google Chrome, or
+   - `edge://extensions` in Microsoft Edge.
+6. Enable **Developer mode**.
+7. Click **Load unpacked**.
+8. Select the extracted extension folder.
+9. Pin **Scribd Preview to PDF** to your browser toolbar.
 
 ### From source
 
 ```bash
 git clone https://github.com/ergs0204/scribd-pdf-downloader.git
+cd scribd-pdf-downloader
 ```
 
-Then load the cloned folder as an unpacked extension. No build step or package installation is required.
+Then load the repository folder as an unpacked extension.
+
+There is no build step and no package installation is required.
 
 ## Usage
 
@@ -89,7 +107,13 @@ No page-by-page scrolling is required.
 | Saving | Opening the browser's normal Save dialog |
 | Complete | The download has started |
 
-The popup also reports selectable-text pages, pages with decoded font text, and any unresolved custom-font text omitted from copying.
+The popup also reports:
+
+- rendered page count
+- selectable-text page count
+- decoded custom-font text
+- failed pages
+- unresolved text that could not be decoded reliably
 
 ## How it works
 
@@ -98,7 +122,7 @@ The popup also reports selectable-text pages, pages with decoded font text, and 
 3. **Session token refresh** - Uses Scribd's CSRF and document-token endpoints in your existing browser session.
 4. **Concurrent page loading** - Fetches JSONP page descriptions and their authorized assets with retries.
 5. **Page reconstruction** - Draws each clipped image sprite into its correct page coordinates.
-6. **Built-in text preservation** - Reads Scribd's positioned `text_layer` and supplied subset-font character maps. For supported scrambled fonts, glyph ordering recovers a unique document-specific character permutation. Original codes still draw the visual page; decoded Unicode goes into the invisible PDF layer for selection and copying. Ambiguous or conflicting mappings are never guessed.
+6. **Built-in text preservation** - Reads Scribd's positioned `text_layer` and supplied subset-font character maps. For supported scrambled fonts, glyph ordering recovers a unique document-specific character permutation. Original codes still draw the visual page; decoded Unicode goes into the invisible PDF layer for selection and copying.
 7. **Local PDF assembly** - Creates the final PDF in a hidden extension document and hands it to the browser download manager.
 
 The extension does not create a headless Scribd session, scrape your cookies, upload documents to another service, or run OCR.
