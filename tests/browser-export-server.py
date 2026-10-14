@@ -14,6 +14,7 @@ import requests
 
 ROOT = Path(__file__).resolve().parent.parent
 PUBLIC_URL = "https://www.scribd.com/document/507619928/B-tree-dbms"
+DOCUMENT_ID = "507619928"
 PREVIEW_URL = "https://www.scribd.com/embeds/507619928/content?start_page=1&view_mode=scroll&show_recommendations=false"
 SESSION = requests.Session()
 CACHE = {}
@@ -84,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/proxy":
                 remote = parse_qs(urlsplit(self.path).query)["url"][0]
                 parsed = urlsplit(remote)
-                if parsed.hostname != "www.scribd.com" or parsed.path not in {"/csrf_token", "/document/507619928/token"}:
+                if parsed.hostname != "www.scribd.com" or parsed.path not in {"/csrf_token", f"/document/{DOCUMENT_ID}/token"}:
                     raise ValueError("Unsupported token request")
                 headers = {"Content-Type": "application/json"}
                 for key in ("x-csrf-token", "x-requested-with"):
@@ -103,6 +104,16 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--url", default=PUBLIC_URL, help="Normal public Scribd document URL to test")
     args = parser.parse_args()
-    print(f"Regression server: http://127.0.0.1:{args.port}/document/507619928/B-tree-dbms", flush=True)
+    parsed_url = urlsplit(args.url)
+    match = re.fullmatch(r"/(?:document|doc)/(\d+)(?:/[^?#]*)?", parsed_url.path)
+    if parsed_url.scheme != "https" or parsed_url.hostname != "www.scribd.com" or not match:
+        parser.error("--url must be an https://www.scribd.com/document/<id>/... URL")
+    PUBLIC_URL = args.url
+    DOCUMENT_ID = match[1]
+    PREVIEW_URL = f"https://www.scribd.com/embeds/{DOCUMENT_ID}/content?start_page=1&view_mode=scroll&show_recommendations=false"
+    if DOCUMENT_ID != "507619928":
+        SAVE_ROOT = ROOT / "tmp" / f"regression-{DOCUMENT_ID}"
+    print(f"Regression server: http://127.0.0.1:{args.port}{parsed_url.path}", flush=True)
     ThreadingHTTPServer(("127.0.0.1", args.port), Handler).serve_forever()

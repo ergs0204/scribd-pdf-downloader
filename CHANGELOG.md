@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.5 - 2026-10-14
+
+- Fixed missing visible text on pages with multiple stacked `text_layer` containers. The exporter now loads fonts and extracts positioned text from every layer instead of only the first.
+- Verified all 92 text fragments on page 4 of `492478137/tkanki-zwierzęce`; the previously absent lower paragraphs now render.
+- Added a two-layer extraction regression and generalized the opt-in browser export runner for other document URLs and single-page checks. All 27 automated tests pass.
+- This release fixes missing visual text only. This Polish document's older scrambled fonts are still unsupported for readable copying; unresolved mappings remain omitted from the copy layer rather than producing gibberish.
+
 ## 1.4.4 - 2026-10-05
 
 - Fixed copied gibberish from supported Scribd scrambled subset fonts: supplied font cmap/glyph-order metadata now recovers a unique document-specific ASCII permutation. No OCR, external recognition service, or hardcoded document key.

@@ -250,41 +250,45 @@ async function extractTextFragments(html, styleText, page, textDecoder) {
   try {
     await waitForLayout();
     const pageElement = shadow.querySelector(".newpage") || container.firstElementChild;
-    const textLayer = shadow.querySelector(".text_layer");
-    if (!pageElement || !textLayer) return [];
-    await loadTextLayerFonts(textLayer);
+    const textLayers = shadow.querySelectorAll
+      ? [...shadow.querySelectorAll(".text_layer")]
+      : [shadow.querySelector(".text_layer")].filter(Boolean);
+    if (!pageElement || !textLayers.length) return [];
+    await Promise.all(textLayers.map(layer => loadTextLayerFonts(layer)));
     await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
 
     const pageRect = pageElement.getBoundingClientRect();
     const fragments = [];
-    const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
-    while (walker.nextNode()) {
-      const node = walker.currentNode;
-      const text = node.nodeValue;
-      if (!text || !text.trim()) continue;
-      const range = document.createRange();
-      range.selectNodeContents(node);
-      const rect = range.getBoundingClientRect();
-      range.detach();
-      if (!rect.width || !rect.height) continue;
-      const computed = getComputedStyle(node.parentElement);
-      fragments.push({
-        text,
-        characterBoxes: measureCharacterBoxes(node, pageRect),
-        x: rect.left - pageRect.left,
-        y: rect.top - pageRect.top,
-        width: rect.width,
-        height: rect.height,
-        color: visibleColor(computed.color),
-        family: computed.fontFamily || "sans-serif",
-        weight: computed.fontWeight || "400",
-        style: computed.fontStyle || "normal",
-        ...textCanvasMetrics(node.parentElement, pageElement, computed),
-        writingMode: computed.writingMode || "horizontal-tb",
-        // Visual glyphs still use the source codes. Only the invisible PDF
-        // layer uses Unicode recovered from the document's subset fonts.
-        ...decodeFontText(text, computed.fontFamily, textDecoder)
-      });
+    for (const textLayer of textLayers) {
+      const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = node.nodeValue;
+        if (!text || !text.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const rect = range.getBoundingClientRect();
+        range.detach();
+        if (!rect.width || !rect.height) continue;
+        const computed = getComputedStyle(node.parentElement);
+        fragments.push({
+          text,
+          characterBoxes: measureCharacterBoxes(node, pageRect),
+          x: rect.left - pageRect.left,
+          y: rect.top - pageRect.top,
+          width: rect.width,
+          height: rect.height,
+          color: visibleColor(computed.color),
+          family: computed.fontFamily || "sans-serif",
+          weight: computed.fontWeight || "400",
+          style: computed.fontStyle || "normal",
+          ...textCanvasMetrics(node.parentElement, pageElement, computed),
+          writingMode: computed.writingMode || "horizontal-tb",
+          // Visual glyphs still use the source codes. Only the invisible PDF
+          // layer uses Unicode recovered from the document's subset fonts.
+          ...decodeFontText(text, computed.fontFamily, textDecoder)
+        });
+      }
     }
     return fragments;
   } finally {

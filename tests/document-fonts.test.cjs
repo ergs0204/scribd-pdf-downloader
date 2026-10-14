@@ -193,6 +193,27 @@ test("custom-font text keeps encoded visual glyphs but copies decoded Unicode", 
   assert.match(sandbox.makePageContent({width:902,height:507,texts:fragments},codec,0.75),/Tj/);
 });
 
+test('all stacked text layers are extracted, including later page-4 paragraphs', async () => {
+  const page={getBoundingClientRect(){return {left:0,top:0};}};
+  const layers=[{parentElement:page},{parentElement:page}];
+  const nodes=layers.map((layer,index)=>({nodeValue:index?'Lower paragraph':'Upper paragraph',parentElement:{parentElement:layer}}));
+  const sandbox=loadScript('builder.js',{
+    NodeFilter:{SHOW_TEXT:4},requestAnimationFrame:callback=>callback(),
+    getComputedStyle:()=>({fontFamily:'Arial',fontSize:'20px',transform:'none',writingMode:'horizontal-tb'}),
+    document:{
+      body:{appendChild(){}},fonts:{ready:Promise.resolve()},
+      createElement(){return {style:{},remove(){},attachShadow(){return {
+        append(){},querySelector:selector=>selector==='.newpage'?page:layers[0],
+        querySelectorAll:selector=>selector==='.text_layer'?layers:[]
+      };}};},
+      createTreeWalker(layer){let done=false;const node=nodes[layers.indexOf(layer)];return {currentNode:node,nextNode(){if(done)return false;done=true;return true;}};},
+      createRange(){return {selectNodeContents(){},detach(){},getBoundingClientRect(){return {left:10,top:20,width:160,height:25};}};}
+    }
+  });
+  const fragments=await sandbox.extractTextFragments('<div>fixture</div>','',{width:902,height:1274},null);
+  assert.deepEqual(Array.from(fragments,f=>f.copyText),['Upper paragraph','Lower paragraph']);
+});
+
 test("font decoder recovers a unique permutation from subset glyph ordering, not a fixed key", () => {
   const sandbox = loadScript('builder.js');
   for(const key of [[1,5,3,6,11,14,4,15,10,12,13,2,9,8,7,0],[15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0]]) {

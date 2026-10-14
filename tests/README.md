@@ -32,6 +32,21 @@ Repeat with `?cold=1&zoom=1` to omit the live font link and reproduce the live
 preview's zoom. The resulting PDF's SHA-256 must match the normal export.
 Stop the server after testing; it binds only to loopback.
 
+For other public document URLs, pass `--url` and optionally `--port`:
+
+```sh
+python tests/browser-export-server.py --url https://www.scribd.com/document/492478137/tkanki-zwierz%C4%99ce --port 8767
+```
+
+Open the same document path on `http://127.0.0.1:8767`. Add
+`?page=4&expectedTextPages=0` to check only page 4 of this older scrambled-font
+document. Its visible export must include all 92 source text fragments and
+the lower paragraphs, but its unsupported scrambled text remains visual-only.
+The page's `data-fragment-count` records the actual extracted fragment count.
+Results for other documents are saved under ignored `tmp/regression-<id>/`.
+Without `page`, every manifest page is exported. `expectedTextPages` overrides
+the copy-layer page-count assertion; it does not change the PDF or decoder.
+
 Check actual copied Unicode with Python and `pypdf`:
 
 ```sh
