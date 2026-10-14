@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.6 - 2026-10-14
+
+- Added an offline vector-signature fallback for older scrambled TrueType subsets with shuffled glyph IDs. Compact bundled reference-glyph profiles recover a consistent 16-entry permutation; conflicting or insufficient evidence fails closed. No OCR, recognition service, font-file bundling, or document-specific replacement table.
+- Added character-block checks to distinguish scrambled Latin/Polish text and punctuation from unchanged blocks. Original Scribd fonts still render every visible glyph.
+- Verified readable selectable text across all 10 pages of `492478137/tkanki-zwierzęce`, including the previously missing page-4 paragraphs and Polish diacritics. One unsupported arrow symbol remains visual-only.
+- Fixed selection bounds for exceptionally wide layout spaces by lowering coordinate resolution only for affected copy-font subsets, without changing their em scale or visible page images.
+- Verified 12,452 selection boxes, correct Polish copy output in PDF.js 3/PDFium/pypdf, and unchanged image streams. The prior 22-page English copy regression still passes.
+- Added bounded outline parsing, synthetic shuffled-font/conflict regressions, opt-in actual-font checks, and a development-time reference-signature generator. All 33 automated tests pass.
+
 ## 1.4.5 - 2026-10-14
 
 - Fixed missing visible text on pages with multiple stacked `text_layer` containers. The exporter now loads fonts and extracts positioned text from every layer instead of only the first.

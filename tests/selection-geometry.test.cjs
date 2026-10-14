@@ -57,6 +57,16 @@ test('the same Unicode character can have different font advances without changi
   assert.notEqual(codec.entries[0].advance,codec.entries[1].advance);
   assert.match(r.makePageContent(page,codec,.75),/1 0 0 1 4\.5 66 Tm\n<0002> Tj/);
 });
+
+test('wide layout spaces retain their advance without overflowing signed glyph coordinates',()=>{
+  const r=renderer(),fragment={text:'a b',x:0,y:0,width:250,height:20,
+    characterBoxes:[{x:0,y:0,width:10,height:20},{x:10,y:0,width:230,height:20},{x:240,y:0,width:10,height:20}]};
+  const page={width:400,height:200,texts:[fragment]},codec=r.makeTextCodec([page]),face=codec.fontFor(fragment);
+  assert.equal(face.units,2048);
+  assert.equal(face.entries[1].advance/face.units,11.5);
+  assert.ok(face.glyphWidths.every(width=>width<=32767));
+  assert.doesNotMatch(r.makePageContent(page,codec,.75),/ Tz/);
+});
 test('incompatible source metrics use separate reusable faces, not one Unicode width',()=>{
   const r=renderer();
   const fragments=[

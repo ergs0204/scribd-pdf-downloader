@@ -56,7 +56,7 @@ async function runFullExport() {
     makePdf = pages => {
       const geometry = pages.map(page => ({width:page.width,height:page.height,texts:page.texts
         .filter(fragment=>fragment.selectable!==false)
-        .map(({copyText,text,x,y,width,height,characterBoxes})=>({text:copyText??text,x,y,width,height,characterBoxes}))}));
+        .map(({copyText,text,x,y,width,height,characterBoxes,family})=>({text:copyText??text,x,y,width,height,characterBoxes,family}))}));
       window.__geometrySave=originalFetch('/save?name=selection-geometry.json',{method:'POST',body:JSON.stringify(geometry)});
       document.body.dataset.fragmentCount=String(pages.reduce((sum,page)=>sum+page.texts.length,0));
       return originalMakePdf(pages);

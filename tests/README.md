@@ -39,9 +39,9 @@ python tests/browser-export-server.py --url https://www.scribd.com/document/4924
 ```
 
 Open the same document path on `http://127.0.0.1:8767`. Add
-`?page=4&expectedTextPages=0` to check only page 4 of this older scrambled-font
-document. Its visible export must include all 92 source text fragments and
-the lower paragraphs, but its unsupported scrambled text remains visual-only.
+`?page=4` to check only page 4 of this older scrambled-font document. Its visible
+export must include all 92 source text fragments and the lower paragraphs;
+the local signature fallback must add readable Polish text to the copy layer.
 The page's `data-fragment-count` records the actual extracted fragment count.
 Results for other documents are saved under ignored `tmp/regression-<id>/`.
 Without `page`, every manifest page is exported. `expectedTextPages` overrides
@@ -98,3 +98,26 @@ python tests/contact-sheet.py
 
 The optional contact sheet step requires Pillow. Inspect every sheet; successful
 completion alone cannot detect wrong font glyphs or layout problems.
+
+## Older shuffled-font fallback
+
+`outline-decoder.test.cjs` uses synthetic vector contours, not Scribd page data or
+copyrighted font files. It covers normalization, shuffled glyph IDs with multiple
+keys, bounds checks, insufficient/contradictory evidence, and malformed profiles.
+
+With the affected document's font CSS saved locally outside Git, run:
+
+```sh
+node tests/verify-older-font-copy.cjs /path/to/local-font.css
+```
+
+This opt-in check exercises the real decoder against `492478137`'s supplied fonts
+and asserts readable Polish headings, diacritics, body phrases, and punctuation.
+Do not commit the source CSS/font fixture. For a new export of that document,
+the browser runner expects 10 decoded text pages for a full export. The one
+unresolved arrow glyph can remain visual-only.
+
+Regenerate compact reference signatures from legally available local fonts with
+`python scripts/generate-glyph-fingerprints.py --font-dir /path/to/fonts` (requires
+fontTools at development time only). The generated JavaScript contains numeric
+occupancy signatures and aspect ratios, not font files or drawable outlines.

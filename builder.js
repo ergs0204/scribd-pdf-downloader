@@ -368,6 +368,11 @@ function isDocumentFontFamily(value) {
 // permutation. Accept only a complete, unique, contradiction-free ordering;
 // never substitute a fixed document key or guess from language frequency.
 function inferFontTextDecoder(fonts) {
+  return inferOrderedFontTextDecoder(fonts) ||
+    (globalThis.ScribdOutlineDecoder?.infer(fonts, readSfntCmap) ?? null);
+}
+
+function inferOrderedFontTextDecoder(fonts) {
   const edges = Array.from({ length: 16 }, () => new Set());
   const families = new Set();
   for (const { family, cmap } of fonts) {
@@ -403,6 +408,11 @@ function decodeFontText(text, family, decoder) {
   if (!isDocumentFontFamily(family)) return { copyText: text, selectable: true, decoded: false };
   const name = family.split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
   if (!decoder?.families.has(name)) return { copyText: '', selectable: false, decoded: false };
+  if (decoder.mappings) {
+    const mapping=decoder.mappings.get(name),decoded=[...text].map(character=>mapping?.get(character.codePointAt(0)));
+    if(decoded.some(character=>character===undefined))return {copyText:'',selectable:false,decoded:false};
+    return {copyText:decoded.join(''),selectable:true,decoded:true};
+  }
   const copyText = [...text].map(character => {
     const code = character.codePointAt(0);
     return code >= 0x30 && code < 0x70
@@ -423,7 +433,7 @@ function documentFontCmaps(css) {
     try {
       const bytes = Uint8Array.from(atob(data.replace(/\s/g, '')), c => c.charCodeAt(0));
       const cmap = readSfntCmap(bytes);
-      if (cmap.length) fonts.push({ family, cmap });
+      if (cmap.length || globalThis.ScribdOutlineDecoder) fonts.push({ family, cmap, bytes });
     } catch (_) { /* Unsupported/malformed fonts cannot supply a decoder. */ }
   }
   return fonts;
@@ -432,8 +442,9 @@ function documentFontCmaps(css) {
 // Only read the 64 relevant code points. Bounds checks apply to every table
 // and subtable access; hostile/unsupported fonts fail closed, without loops
 // over a potentially enormous character range.
-function readSfntCmap(bytes) {
+function readSfntCmap(bytes, lower = 0x30, upper = 0x6f) {
   try {
+    if(!Number.isInteger(lower)||!Number.isInteger(upper)||lower<0||upper>0xffff||upper<lower)return [];
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const u16 = offset => view.getUint16(offset, false);
     const u32 = offset => view.getUint32(offset, false);
@@ -480,9 +491,10 @@ function readSfntCmap(bytes) {
         bounded(sub, 16 + 8 * segments, limit);
         const ends = sub + 14, starts = ends + 2 * segments + 2;
         const deltas = starts + 2 * segments, offsets = deltas + 2 * segments;
-        for (let code = 0x30; code < 0x70; code++) {
-          for (let i = 0; i < segments; i++) {
-            if (code < u16(starts + 2 * i) || code > u16(ends + 2 * i)) continue;
+        for (let i = 0; i < segments; i++) {
+          const start=u16(starts+2*i),finish=u16(ends+2*i);
+          if(finish<start || (i && start<=u16(ends+2*(i-1))))return [];
+          for (let code = Math.max(lower,start); code <= Math.min(upper,finish); code++) {
             const delta = u16(deltas + 2 * i), range = u16(offsets + 2 * i);
             let glyph;
             if (!range) glyph = (code + delta) & 0xffff;
@@ -493,7 +505,7 @@ function readSfntCmap(bytes) {
               if (glyph) glyph = (glyph + delta) & 0xffff;
             }
             if (glyph) entries.push({ code, glyph });
-            break;
+            if(entries.length>8192)return [];
           }
         }
       } else {
@@ -502,10 +514,12 @@ function readSfntCmap(bytes) {
         bounded(sub + 16, groups * 12, limit);
         for (let i = 0; i < groups; i++) {
           const record = sub + 16 + 12 * i, start = u32(record), finish = u32(record + 4);
-          if (finish < start) return [];
-          for (let code = Math.max(start, 0x30); code <= Math.min(finish, 0x6f); code++) {
+          if (finish < start || (i && start <= u32(record - 8))) return [];
+          for (let code = Math.max(start, lower); code <= Math.min(finish, upper); code++) {
             const glyph = u32(record + 8) + code - start;
+            if(glyph>65535)return [];
             if (glyph) entries.push({ code, glyph });
+            if(entries.length>8192)return [];
           }
         }
       }
@@ -694,13 +708,13 @@ function makePdf(pages) {
   codec.fonts.forEach((face,index) => {
     const base=3+index*6, name=`ScribdSelection${index}`;
     object(base, [`<< /Type /Font /Subtype /Type0 /BaseFont /${name} /Encoding /Identity-H /DescendantFonts [${base+1} 0 R] /ToUnicode ${base+2} 0 R >>`]);
-    const widths = face.entries.map(entry => pdfNumber(entry.advance * 1000 / 4096)).join(' ');
+    const widths = face.entries.map(entry => pdfNumber(entry.advance * 1000 / face.units)).join(' ');
     object(base+1, [`<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${base+3} 0 R /DW 1000 /W [1 [${widths}]] /CIDToGIDMap ${base+5} 0 R >>`]);
     const cmap = encoder.encode(makeToUnicodeCMap(face.entries.map(entry => [entry.character, entry.cid])));
     object(base+2, [`<< /Length ${cmap.length} >>\nstream\n`, cmap, "endstream"]);
-    const maxWidth = Math.max(...face.glyphWidths) * 1000 / 4096;
+    const maxWidth = Math.max(...face.glyphWidths) * 1000 / face.units;
     object(base+3, [`<< /Type /FontDescriptor /FontName /${name} /Flags 4 /FontBBox [0 0 ${pdfNumber(maxWidth)} 1000] /ItalicAngle 0 /Ascent 1000 /Descent 0 /CapHeight 1000 /StemV 80 /FontFile2 ${base+4} 0 R >>`]);
-    const font = makeSelectionFont(face.glyphWidths);
+    const font = makeSelectionFont(face.glyphWidths, face.units);
     object(base+4, [`<< /Length ${font.length} /Length1 ${font.length} >>\nstream\n`, font, "\nendstream"]);
     const gids = new Uint8Array((face.entries.length + 1) * 2);
     const gidView = new DataView(gids.buffer);
@@ -744,12 +758,12 @@ function makePdf(pages) {
 function makeTextCodec(pages) {
   const characters = new Map();
   const fonts = [], byFragment = new WeakMap();
-  function variant(character, box) {
+  function variant(character, box, units = 4096) {
     // Collapsed source spaces have zero width and are not painted/copied.
     // Keep a sensible nominal metric for them: a near-zero space advance
     // causes some extractors to misclassify tiny kerning corrections as words.
     const ratio=box?.height>0 && box.width>0 ? box.width/box.height : /\s/u.test(character) ? .25 : 1;
-    const advance = Math.max(1, Math.min(32767, Math.round(ratio * 4096)));
+    const advance = Math.max(1, Math.min(32767, Math.round(ratio * units)));
     return { advance, key: `${character}\u0000${advance}` };
   }
   for (const page of pages) {
@@ -757,15 +771,22 @@ function makeTextCodec(pages) {
       if (fragment.selectable === false) continue;
       const text = [...(fragment.copyText ?? fragment.text)];
       if (!text.length) continue;
-      const candidates=text.map((character,index)=>variant(character,selectionBox(fragment,index,text.length)));
+      const boxes=text.map((_,index)=>selectionBox(fragment,index,text.length));
+      const widest=Math.max(...boxes.map(box=>box?.height>0?box.width/box.height:1));
+      let units=4096;
+      // Very wide layout spaces cannot fit in signed TrueType coordinates at
+      // 4096 units/em. Lower resolution only for that subset, not its em scale.
+      while(units>16 && widest*units>32767)units/=2;
+      if(widest*units>32767)throw new Error('A preview text advance exceeds PDF selection-font bounds.');
+      const candidates=text.map((character,index)=>variant(character,boxes[index],units));
       const family=fragment.family || 'source';
       // Some extractors key widths by Unicode instead of CID. Do not put
       // substantially different advances for the same letter in one face.
       // Reuse compatible subsets; split only when source font/spacing differs.
-      let face=fonts.find(font=>font.family===family && candidates.every(({advance},i)=>
+      let face=fonts.find(font=>font.family===family && font.units===units && candidates.every(({advance},i)=>
         !font.primaryWidths.has(text[i]) || Math.abs(font.primaryWidths.get(text[i])-advance)<=1));
       if (!face) {
-        face={family,index:fonts.length,resource:`Ftxt${fonts.length}`,entries:[],variants:new Map(),glyphWidths:[],glyphIds:new Map(),primaryWidths:new Map()};
+        face={family,units,index:fonts.length,resource:`Ftxt${fonts.length}`,entries:[],variants:new Map(),glyphWidths:[],glyphIds:new Map(),primaryWidths:new Map()};
         fonts.push(face);
       }
       byFragment.set(fragment,face);
@@ -790,7 +811,8 @@ function makeTextCodec(pages) {
     encode(text, box, fragment) {
       let hex = "";
       for (const character of text) {
-        const cid = box ? byFragment.get(fragment).variants.get(variant(character,box).key) : characters.get(character);
+        const face=box?byFragment.get(fragment):null;
+        const cid = box ? face.variants.get(variant(character,box,face.units).key) : characters.get(character);
         hex += cid.toString(16).padStart(4, "0");
       }
       return hex;
@@ -837,8 +859,8 @@ function makePageContent(page, codec, scale) {
 // Tiny, deterministic rectangular glyphs used ONLY with invisible rendering
 // mode 3. It makes selection geometry independent of installed fallback fonts.
 // Source Scribd fonts still draw every visible glyph; /ToUnicode supplies text.
-function makeSelectionFont(widths = [4096]) {
-  const units = 4096, count = widths.length + 1;
+function makeSelectionFont(widths = [4096], units = 4096) {
+  const count = widths.length + 1;
   const maxAdvance = Math.max(units, ...widths);
   const tables = new Map();
   function table(tag, size) {

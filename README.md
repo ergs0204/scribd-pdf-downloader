@@ -122,7 +122,7 @@ The popup also reports:
 3. **Session token refresh** - Uses Scribd's CSRF and document-token endpoints in your existing browser session.
 4. **Concurrent page loading** - Fetches JSONP page descriptions and their authorized assets with retries.
 5. **Page reconstruction** - Draws each clipped image sprite into its correct page coordinates.
-6. **Built-in text preservation** - Reads Scribd's positioned `text_layer` and supplied subset-font character maps. For supported scrambled fonts, glyph ordering recovers a unique document-specific character permutation. Original codes still draw the visual page; decoded Unicode goes into the invisible PDF layer for selection and copying.
+6. **Built-in text preservation** - Reads every positioned `text_layer` and supplied subset-font character map. Glyph ordering recovers supported document-specific character permutations. For older subsets with shuffled glyph IDs, an offline fallback compares normalized vector signatures against compact bundled reference-glyph profiles, requires a complete consistent permutation, and checks scrambled versus unchanged character blocks. Original codes still draw the visible page; decoded Unicode goes into the invisible PDF layer for selection and copying.
 7. **Local PDF assembly** - Creates the final PDF in a hidden extension document and hands it to the browser download manager.
 
 The extension does not create a headless Scribd session, scrape your cookies, upload documents to another service, or run OCR.
@@ -137,6 +137,7 @@ Scribd documents are not all stored the same way:
 | Image plus Scribd text layer | Reconstructed image with selectable built-in text overlay |
 | Scribd text/vector layer | Text rendered visually with a selectable Unicode layer |
 | Supported Scribd scrambled subset font | Original visual glyphs plus readable, selectable text decoded from the supplied font metadata |
+| Supported older shuffled subset font | Readable selectable text recovered with local reference-glyph signatures and consistent character-block mapping |
 | Unresolved custom font or private-use symbol | Visual appearance preserved; unresolved fragments omitted from copying |
 
 If Scribd does not provide text for a scanned page, this extension does not invent it. Use a separate OCR tool afterward if you personally need searchable scans.
@@ -154,13 +155,18 @@ If Scribd does not provide text for a scanned page, this extension does not inve
 
 No analytics, advertising SDK, external API, or telemetry is included.
 
+The older-font fallback bundles only numeric glyph signatures, not reference font
+files, drawable reference outlines, OCR models, or a recognition service. Original
+Scribd fonts continue to render the page. No document text, fonts, or signatures
+are uploaded; the fallback also works in Chrome/Edge without installed reference fonts.
+
 ## Limitations
 
 - Only pages authorized by Scribd for the active browser session can be requested.
 - Signed asset tokens expire; start each export from a live document page.
 - Very large documents are assembled in browser memory and may exceed available RAM.
 - Unusual vertical or mathematical layouts may render differently from the source.
-- Font decoding currently supports a shared low-nibble permutation in the ASCII range `0x30–0x6F`, recoverable from Unicode SFNT cmap formats 4/12 and subset glyph order. It is not a universal decoder for every font encoding. Unsupported fonts or ambiguous mappings are omitted from the copy layer, with a popup warning.
+- Font decoding supports ordered subset fonts and some older shuffled TrueType subsets. The local signature fallback requires at least 24 clear ASCII anchors supporting all 16 permutation entries, rejects conflicts, and checks each character block's geometry before copying it. Reference coverage focuses on Latin text, including Polish diacritics and common punctuation; it is not a universal decoder. Unsupported outlines, ambiguous mappings, and unresolved fragments are omitted from copying, with a popup warning.
 - Private-use symbol glyphs can remain visible without a copyable equivalent. Text contained only inside images remains image-only.
 - Selectable text quality and reading order depend on Scribd's positioned fragments; this does not reconstruct semantic paragraphs or fix source typos.
 - Site changes can break manifest or token parsing; open an issue with non-sensitive reproduction details if that happens.
@@ -191,6 +197,10 @@ The page may be image-only, or its custom font may not have a reliable decoder. 
 ### Copied text is still garbled in an old PDF
 
 Reload the extension and confirm version **1.4.4** or newer, reload the document tab, then export a new PDF. Updating the extension does not repair files downloaded with an older version.
+
+For older shuffled fonts, including the Polish `492478137` document, use
+**1.4.6** or newer for the local glyph-signature fallback. Unresolved symbols
+may still remain visual-only; check the popup's warning.
 
 ## Development
 

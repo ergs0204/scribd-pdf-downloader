@@ -286,6 +286,10 @@ test('bounded SFNT parser handles cmap 4 delta/range-offset and cmap 12', () => 
   const badOffset=sfntFixture(4,true); badOffset.writeUInt16BE(0xffff,68);
   assert.deepEqual(read(badOffset),[]);
   assert.deepEqual(read(Buffer.from('not a font')),[]);
+  const extended=sfntFixture(12);extended.writeUInt32BE(0x140,56);extended.writeUInt32BE(0x145,60);
+  assert.deepEqual(read(extended),[]);
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.readSfntCmap(extended,0x140,0x145))),
+    Array.from({length:6},(_,i)=>({code:0x140+i,glyph:7+i})));
 });
 
 test('font CSS decodes only supported document data fonts', () => {
