@@ -183,7 +183,9 @@ async function buildPage(page, token, quality, styleText, textDecoder) {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const images = [...doc.querySelectorAll("img[orig], img[src]")];
   const texts = await extractTextFragments(html, styleText, page, textDecoder);
-  if (!images.length && !texts.length) throw new Error("No image or built-in text data was found.");
+  if (!images.length && !texts.length && !isBlankPreviewPage(doc)) {
+    throw new Error("No image or built-in text data was found in a valid preview page.");
+  }
 
   const canvas = createRenderCanvas(page.width, page.height);
   const ctx = canvas.getContext("2d", { alpha: false });
@@ -210,6 +212,16 @@ async function buildPage(page, token, quality, styleText, textDecoder) {
   drawVisibleText(ctx, texts);
   const jpeg = await renderCanvasToBlob(canvas, "image/jpeg", quality);
   return { width: page.width, height: page.height, bytes: new Uint8Array(await jpeg.arrayBuffer()), texts };
+}
+
+function isBlankPreviewPage(doc) {
+  const page = doc.querySelector(".newpage");
+  // Only a successfully parsed Scribd page container can be blank. Do not
+  // hide access/error responses or unsupported media by saving a white page.
+  return !!page && !page.textContent?.trim() &&
+    !page.querySelector("img, svg, canvas, object, embed, iframe, video, audio, input, textarea, button") &&
+    ![page, ...page.querySelectorAll("[style]")].some(element =>
+      /(?:url\s*\(|(?:linear|radial|conic)-gradient\s*\()/i.test(element.getAttribute("style") || ""));
 }
 
 function createRenderCanvas(width, height) {

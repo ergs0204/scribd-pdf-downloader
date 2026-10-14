@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.7 - 2026-10-14
+
+- Fixed issue #1: a genuine blank Scribd page no longer aborts the whole export. Blank pages remain white at their original dimensions and position in the PDF.
+- Retained error handling for missing/invalid page containers, visible error text, unsupported media, CSS images, and failed downloads; these are not silently converted to blank pages.
+- Added a mixed three-page export regression with a blank middle page and rejection checks. All 36 automated tests pass.
+
 ## 1.4.6 - 2026-10-14
 
 - Added an offline vector-signature fallback for older scrambled TrueType subsets with shuffled glyph IDs. Compact bundled reference-glyph profiles recover a consistent 16-entry permutation; conflicting or insufficient evidence fails closed. No OCR, recognition service, font-file bundling, or document-specific replacement table.
