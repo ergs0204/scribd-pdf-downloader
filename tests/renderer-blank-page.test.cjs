@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),test=require('node:test');
 
-function renderer() {
+function renderer(computedStyle = {}) {
   const updates=[],saved=[],painted=[];
   const canvas={getContext(){return {fillRect(...args){painted.push(args);},drawImage(){}};},
     toBlob(callback){callback(new Blob([new Uint8Array([255,216,255,217])],{type:'image/jpeg'}));}};
@@ -22,6 +22,7 @@ function renderer() {
     };}},
     fetch:async url=>({ok:true,url:String(url),text:async()=>JSON.stringify('unused'),blob:async()=>new Blob(['fixture'])}),
     createImageBitmap:async()=>({width:1,height:1,close(){}}),requestAnimationFrame:callback=>callback(),
+    getComputedStyle(){return {backgroundImage:'none',content:'none',...computedStyle};},
     setTimeout(callback,delay,...args){return delay>100000?0:setTimeout(callback,delay,...args);},clearTimeout
   };
   vm.createContext(sandbox);vm.runInContext(fs.readFileSync(path.join(__dirname,'../builder.js'),'utf8'),sandbox);
@@ -60,4 +61,12 @@ test('unsupported media, visible error text, or CSS images are not accepted as b
   assert.equal(check({...base,querySelector(){return {};}}),false);
   assert.equal(check({...base,getAttribute(){return 'background-image:url(page.png)';}}),false);
   assert.equal(check({...base,querySelectorAll(){return [{getAttribute(){return 'background:linear-gradient(red,blue)';}}];}}),false);
+});
+
+test('class-based CSS images and generated pseudo-text fail visibly instead of saving blank',async()=>{
+  for(const style of [{backgroundImage:'url(page.png)'},{content:'"Missing page"'}]) {
+    const {sandbox,saved}=renderer(style);
+    await assert.rejects(sandbox.buildPage({width:800,height:1000,inlineHtml:'<div class="newpage"><div class="image_layer"></div></div>'},'test',.92,'.image_layer{background-image:url(page.png)}',null),/No image/);
+    assert.equal(saved.length,0);
+  }
 });

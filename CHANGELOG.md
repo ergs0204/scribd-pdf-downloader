@@ -6,7 +6,7 @@ All notable changes to this project are documented here.
 
 - Fixed issue #1: a genuine blank Scribd page no longer aborts the whole export. Blank pages remain white at their original dimensions and position in the PDF.
 - Retained error handling for missing/invalid page containers, visible error text, unsupported media, CSS images, and failed downloads; these are not silently converted to blank pages.
-- Added a mixed three-page export regression with a blank middle page and rejection checks. All 36 automated tests pass.
+- Added a mixed three-page export regression with a blank middle page and rejection checks, including class-based CSS images and generated pseudo-text. All 37 automated tests pass; a real-browser synthetic export preserves an entirely white middle page and rejects a CSS image page.
 
 ## 1.4.6 - 2026-10-14
 

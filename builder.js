@@ -183,7 +183,7 @@ async function buildPage(page, token, quality, styleText, textDecoder) {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const images = [...doc.querySelectorAll("img[orig], img[src]")];
   const texts = await extractTextFragments(html, styleText, page, textDecoder);
-  if (!images.length && !texts.length && !isBlankPreviewPage(doc)) {
+  if (!images.length && !texts.length && !(isBlankPreviewPage(doc) && texts.blankPageVerified)) {
     throw new Error("No image or built-in text data was found in a valid preview page.");
   }
 
@@ -222,6 +222,18 @@ function isBlankPreviewPage(doc) {
     !page.querySelector("img, svg, canvas, object, embed, iframe, video, audio, input, textarea, button") &&
     ![page, ...page.querySelectorAll("[style]")].some(element =>
       /(?:url\s*\(|(?:linear|radial|conic)-gradient\s*\()/i.test(element.getAttribute("style") || ""));
+}
+
+function hasRenderedCssContent(page) {
+  for (const element of [page, ...page.querySelectorAll("*")]) {
+    for (const pseudo of [null, "::before", "::after"]) {
+      const style = getComputedStyle(element, pseudo);
+      if ([style.backgroundImage, style.maskImage, style.webkitMaskImage, style.borderImageSource, style.listStyleImage]
+        .some(value => value && value !== "none")) return true;
+      if (pseudo && style.content && !["none", "normal", '""', "''"].includes(style.content)) return true;
+    }
+  }
+  return false;
 }
 
 function createRenderCanvas(width, height) {
@@ -265,12 +277,16 @@ async function extractTextFragments(html, styleText, page, textDecoder) {
     const textLayers = shadow.querySelectorAll
       ? [...shadow.querySelectorAll(".text_layer")]
       : [shadow.querySelector(".text_layer")].filter(Boolean);
-    if (!pageElement || !textLayers.length) return [];
+    const fragments = [];
+    if (!pageElement) return fragments;
+    if (!textLayers.length) {
+      fragments.blankPageVerified = !hasRenderedCssContent(pageElement);
+      return fragments;
+    }
     await Promise.all(textLayers.map(layer => loadTextLayerFonts(layer)));
     await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1200))]);
 
     const pageRect = pageElement.getBoundingClientRect();
-    const fragments = [];
     for (const textLayer of textLayers) {
       const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
@@ -302,6 +318,7 @@ async function extractTextFragments(html, styleText, page, textDecoder) {
         });
       }
     }
+    if (!fragments.length) fragments.blankPageVerified = !hasRenderedCssContent(pageElement);
     return fragments;
   } finally {
     host.remove();
