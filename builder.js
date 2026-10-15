@@ -116,23 +116,29 @@ async function runJob(job) {
   const blob = new Blob([pdf], { type: "application/pdf" });
   const url = URL.createObjectURL(blob);
   const filename = `${safeFilename(job.title || `scribd-${job.documentId}`)}.pdf`;
-  await report({ running: true, phase: "saving", message: "PDF assembled. Opening the Save dialog…", completed, total: job.pages.length, textPages: textPageCount, failures: [], title: job.title });
-  const saved = await chrome.runtime.sendMessage({ type: "save-pdf", url, filename });
-  if (!saved?.ok) throw new Error(saved?.error || "Chrome could not save the PDF.");
-  await report({
-    running: false,
-    phase: "complete",
-    message: "PDF ready. The browser download has started.",
-    completed,
-    total: job.pages.length,
-    textPages: textPageCount,
-    decodedTextPages: decodedTextPageCount,
-    unresolvedTextPages: unresolvedTextPageCount,
-    failures: [],
-    title: job.title,
-    sizeMiB: +(blob.size / 1048576).toFixed(1)
-  });
-  setTimeout(() => URL.revokeObjectURL(url), 120000);
+  let downloadStarted = false;
+  try {
+    await report({ running: true, phase: "saving", message: "PDF assembled. Opening the Save dialog…", completed, total: job.pages.length, textPages: textPageCount, failures: [], title: job.title });
+    const saved = await chrome.runtime.sendMessage({ type: "save-pdf", url, filename });
+    if (!saved?.ok) throw new Error(saved?.error || "Chrome could not save the PDF.");
+    downloadStarted = true;
+    await report({
+      running: false,
+      phase: "complete",
+      message: "PDF ready. The browser download has started.",
+      completed,
+      total: job.pages.length,
+      textPages: textPageCount,
+      decodedTextPages: decodedTextPageCount,
+      unresolvedTextPages: unresolvedTextPageCount,
+      failures: [],
+      title: job.title,
+      sizeMiB: +(blob.size / 1048576).toFixed(1)
+    });
+  } finally {
+    if (downloadStarted) setTimeout(() => URL.revokeObjectURL(url), 120000);
+    else URL.revokeObjectURL(url);
+  }
 }
 
 async function loadDocumentFontStyles(stylesheetUrls) {
@@ -230,10 +236,28 @@ function hasRenderedCssContent(page) {
       const style = getComputedStyle(element, pseudo);
       if ([style.backgroundImage, style.maskImage, style.webkitMaskImage, style.borderImageSource, style.listStyleImage]
         .some(value => value && value !== "none")) return true;
+      if (hasVisibleColor(style.backgroundColor)) return true;
+      if (style.boxShadow && style.boxShadow !== "none") return true;
+      if (style.outlineStyle && !["none", "hidden"].includes(style.outlineStyle) &&
+          cssNumber(style.outlineWidth) > 0 && hasVisibleColor(style.outlineColor)) return true;
+      for (const side of ["Top", "Right", "Bottom", "Left"]) {
+        if (style[`border${side}Style`] && !["none", "hidden"].includes(style[`border${side}Style`]) &&
+            cssNumber(style[`border${side}Width`]) > 0 && hasVisibleColor(style[`border${side}Color`])) return true;
+      }
       if (pseudo && style.content && !["none", "normal", '""', "''"].includes(style.content)) return true;
     }
   }
   return false;
+}
+
+function hasVisibleColor(color) {
+  if (!color || color === "transparent") return false;
+  const components = color.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)$/i);
+  if (components) {
+    if (components[4] !== undefined && Number(components[4]) === 0) return false;
+    if (components.slice(1,4).every(value => Number(value) === 255)) return false;
+  }
+  return !/^(?:white|#fff(?:fff)?)$/i.test(color);
 }
 
 function createRenderCanvas(width, height) {
@@ -397,8 +421,10 @@ function isDocumentFontFamily(value) {
 // permutation. Accept only a complete, unique, contradiction-free ordering;
 // never substitute a fixed document key or guess from language frequency.
 function inferFontTextDecoder(fonts) {
-  return inferOrderedFontTextDecoder(fonts) ||
-    (globalThis.ScribdOutlineDecoder?.infer(fonts, readSfntCmap) ?? null);
+  // A unique glyph-ID ordering alone does not establish character identity.
+  // Prefer a complete geometry-backed mapping when that evidence is available.
+  return (globalThis.ScribdOutlineDecoder?.infer(fonts, readSfntCmap) ?? null) ||
+    inferOrderedFontTextDecoder(fonts);
 }
 
 function inferOrderedFontTextDecoder(fonts) {
@@ -813,7 +839,7 @@ function makeTextCodec(pages) {
       // substantially different advances for the same letter in one face.
       // Reuse compatible subsets; split only when source font/spacing differs.
       let face=fonts.find(font=>font.family===family && font.units===units && candidates.every(({advance},i)=>
-        !font.primaryWidths.has(text[i]) || Math.abs(font.primaryWidths.get(text[i])-advance)<=1));
+        font.variants.has(candidates[i].key) || !font.primaryWidths.has(text[i]) || Math.abs(font.primaryWidths.get(text[i])-advance)<=1));
       if (!face) {
         face={family,units,index:fonts.length,resource:`Ftxt${fonts.length}`,entries:[],variants:new Map(),glyphWidths:[],glyphIds:new Map(),primaryWidths:new Map()};
         fonts.push(face);

@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.8 - 2026-10-14
+
+- Restored persisted rendering/completion/error progress after Manifest V3 worker restarts; a fresh idle timestamp no longer hides session state.
+- Serialized first-time offscreen renderer creation so simultaneous document requests both reach the queue. Failed creation remains retryable.
+- Kept popup preparation errors visible across status polls until another download attempt.
+- Revoked PDF blob URLs immediately on canceled/failed saves or failed messaging, while retaining delayed cleanup for successfully started downloads.
+- Preferred complete geometry-backed font decoding over a uniquely ordered but incorrect glyph-ID permutation.
+- Rejected solid CSS fills, visible borders/outlines, and shadows as unsupported painted content rather than silently exporting them as blank white pages.
+- Reused existing font-width variants across identical repeated-character fragments, preventing needless embedded-font growth and quadratic subset searches for those fragments.
+- Added regression coverage for all seven audit findings plus creation retries and successful-download cleanup. All 46 automated tests pass; the actual Polish-font and prior English copy checks still pass.
+
 ## 1.4.7 - 2026-10-14
 
 - Fixed issue #1: a genuine blank Scribd page no longer aborts the whole export. Blank pages remain white at their original dimensions and position in the PDF.

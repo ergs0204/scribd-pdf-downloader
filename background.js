@@ -1,5 +1,8 @@
 const OFFSCREEN_URL = "builder.html";
-let state = idleState();
+// A new worker has no authoritative state yet. Let the first status request
+// restore session progress instead of letting a fresh idle timestamp win.
+let state = idleState(0);
+let offscreenCreation = null;
 
 chrome.runtime.onInstalled.addListener(() => setState(idleState()));
 chrome.runtime.onStartup.addListener(() => setState(idleState()));
@@ -45,6 +48,13 @@ async function startJob(job) {
 }
 
 async function ensureOffscreenDocument() {
+  if (!offscreenCreation) {
+    offscreenCreation = createOffscreenDocumentIfMissing().finally(() => { offscreenCreation = null; });
+  }
+  return offscreenCreation;
+}
+
+async function createOffscreenDocumentIfMissing() {
   const url = chrome.runtime.getURL(OFFSCREEN_URL);
   if (chrome.runtime.getContexts) {
     const contexts = await chrome.runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"], documentUrls: [url] });
@@ -64,7 +74,7 @@ async function setState(next) {
   await chrome.storage.session.set({ downloadState: state });
 }
 
-function idleState() {
+function idleState(updatedAt = Date.now()) {
   return {
     running: false,
     phase: "idle",
@@ -78,6 +88,6 @@ function idleState() {
     queued: [],
     currentDocumentId: null,
     title: "",
-    updatedAt: Date.now()
+    updatedAt
   };
 }

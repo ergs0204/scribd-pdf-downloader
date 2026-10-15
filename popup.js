@@ -4,6 +4,7 @@ const status = document.getElementById("status");
 const details = document.getElementById("details");
 let pollTimer;
 let preparing = false;
+let preparationError = null;
 
 refreshStatus();
 pollTimer = setInterval(refreshStatus, 700);
@@ -11,6 +12,7 @@ window.addEventListener("unload", () => clearInterval(pollTimer));
 
 button.addEventListener("click", async () => {
   if (preparing) return;
+  preparationError = null;
   preparing = true;
   setDisplay({ phase: "detecting", message: "Finding a Scribd document or preview…", completed: 0, total: 0, failures: [] });
   try {
@@ -62,7 +64,8 @@ button.addEventListener("click", async () => {
   } catch (error) {
     console.error(error);
     preparing = false;
-    setDisplay({ phase: "failed", message: error.message, completed: 0, total: 0, failures: [] });
+    preparationError = { phase: "failed", message: error.message, completed: 0, total: 0, failures: [] };
+    setDisplay(preparationError);
   }
 });
 
@@ -78,7 +81,7 @@ function chooseScribdFrame(frames, activeUrl) {
 async function refreshStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "get-status" });
-    if (response?.ok && (!preparing || response.state?.running)) setDisplay(response.state);
+    if (response?.ok && !preparationError && (!preparing || response.state?.running)) setDisplay(response.state);
   } catch (_) {}
 }
 

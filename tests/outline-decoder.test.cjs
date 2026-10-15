@@ -71,3 +71,19 @@ test('malformed reference profiles fail closed',()=>{
   const c=runtime({65:[[1000,'AAAA']]});
   assert.equal(c.ScribdOutlineDecoder.infer([],()=>[]),null);
 });
+
+test('main decoder uses outline evidence rather than a uniquely wrong glyph-ID order',()=>{
+  const c=runtime(),profiles={},glyphs=[],cmap=[];
+  for(let block=0x30;block<=0x40;block+=16)for(let plain=15;plain>=0;plain--){
+    const paths=shape(plain);profiles[block+plain]=[encodedProfile(c.ScribdOutlineDecoder.signature(paths))];
+    cmap.push({code:block+plain,glyph:glyphs.length+1});glyphs.push(paths);
+  }
+  // Glyph zero is reserved; the remaining IDs descend by character code.
+  const bytes=makeFont([[],...glyphs]);c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  c.chrome={runtime:{onMessage:{addListener(){}}}};c.TextEncoder=TextEncoder;
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../builder.js'),'utf8'),c);
+  const originalRead=c.readSfntCmap;c.readSfntCmap=()=>cmap;
+  const decoder=c.inferFontTextDecoder([{family:'ff0',bytes,cmap}]);
+  assert.equal(c.decodeFontText('AB','ff0',decoder).copyText,'AB');
+  c.readSfntCmap=originalRead;
+});

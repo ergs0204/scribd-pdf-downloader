@@ -6,6 +6,13 @@ Run the offline tests with Node.js:
 node --test tests/*.test.cjs
 ```
 
+`audit-regressions.test.cjs` covers session progress restoration after worker
+restarts, serialized/retryable offscreen creation, sticky popup preparation
+errors, and PDF blob cleanup on failed and successful saves. Other focused
+regressions cover geometry-backed decoder precedence, CSS-painted page
+rejection, and reuse of repeated character-width font subsets. These tests use
+isolated synthetic browser-API/DOM fixtures and do not request user documents.
+
 ## Opt-in real-document export
 
 This harness runs the actual `prepareJob -> runJob -> makePdf` path in Chrome,

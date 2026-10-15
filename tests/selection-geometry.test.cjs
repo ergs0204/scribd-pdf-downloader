@@ -67,6 +67,13 @@ test('wide layout spaces retain their advance without overflowing signed glyph c
   assert.ok(face.glyphWidths.every(width=>width<=32767));
   assert.doesNotMatch(r.makePageContent(page,codec,.75),/ Tz/);
 });
+
+test('identical repeated-character fragments reuse their existing width-variant face',()=>{
+  const r=renderer(),fragment=()=>({text:'ee',family:'fixture',x:0,y:0,width:16,height:12,
+    characterBoxes:[{x:0,y:0,width:6,height:12},{x:6,y:0,width:10,height:12}]});
+  const page={width:200,height:100,texts:Array.from({length:1000},fragment)},codec=r.makeTextCodec([page]);
+  assert.equal(codec.fonts.length,1);assert.equal(codec.fonts[0].entries.length,2);
+});
 test('incompatible source metrics use separate reusable faces, not one Unicode width',()=>{
   const r=renderer();
   const fragments=[

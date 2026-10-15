@@ -70,3 +70,12 @@ test('class-based CSS images and generated pseudo-text fail visibly instead of s
     assert.equal(saved.length,0);
   }
 });
+
+test('visible solid fills, borders and shadows are not accepted as blank',async()=>{
+  for(const style of [{backgroundColor:'rgb(255, 0, 0)'},
+    {borderTopStyle:'solid',borderTopWidth:'20px',borderTopColor:'rgb(0, 0, 255)'},
+    {boxShadow:'rgb(0, 0, 0) 0px 0px 10px'}]){
+    const {sandbox}=renderer(style);
+    await assert.rejects(sandbox.buildPage({width:100,height:100,inlineHtml:'<div class="newpage"></div>'},'test',.92,'',null),/No image/);
+  }
+});
