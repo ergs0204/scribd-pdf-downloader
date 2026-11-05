@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Scribd Preview to PDF",
-  "version": "1.4.8",
+  "version": "1.4.9",
   "description": "Reconstruct image-based Scribd preview pages and save them as a PDF.",
   "permissions": ["downloads", "tabs", "webNavigation", "scripting", "offscreen", "storage"],
   "host_permissions": [
-    "https://www.scribd.com/*",
+    "https://*.scribd.com/*",
     "https://html.scribdassets.com/*",
     "http://html.scribd.com/*"
   ],
@@ -28,9 +28,9 @@
   },
   "content_scripts": [{
     "matches": [
-      "https://www.scribd.com/embeds/*/content*",
-      "https://www.scribd.com/doc/*",
-      "https://www.scribd.com/document/*"
+      "https://*.scribd.com/embeds/*/content*",
+      "https://*.scribd.com/doc/*",
+      "https://*.scribd.com/document/*"
     ],
     "js": ["content.js"],
     "run_at": "document_idle",

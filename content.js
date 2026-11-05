@@ -20,12 +20,12 @@ async function prepareJob() {
   await waitForRenderedPages(pages, 5000);
   pages = attachRenderedPageHtml(pages, document);
 
-  const csrf = await fetch("https://www.scribd.com/csrf_token", {
+  const csrf = await fetch(new URL("/csrf_token", location.origin), {
     method: "POST", credentials: "include", headers: { "content-type": "application/json" },
     body: JSON.stringify({ href: location.href })
   }).then(assertOk).then(r => r.json());
 
-  const tokenResult = await fetch(`https://www.scribd.com/document/${documentId}/token`, {
+  const tokenResult = await fetch(new URL(`/document/${documentId}/token`, location.origin), {
     method: "POST", credentials: "include",
     headers: { "content-type": "application/json", "x-csrf-token": csrf.csrf_token, "x-requested-with": "XMLHttpRequest" },
     body: "{}"

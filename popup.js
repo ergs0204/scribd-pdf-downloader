@@ -70,9 +70,9 @@ button.addEventListener("click", async () => {
 });
 
 function chooseScribdFrame(frames, activeUrl) {
-  const embed = frames.find(frame => /^https:\/\/www\.scribd\.com\/embeds\/\d+\/content(?:[/?#]|$)/i.test(frame.url));
+  const embed = frames.find(frame => /^https:\/\/(?:[a-z0-9-]+\.)*scribd\.com\/embeds\/\d+\/content(?:[/?#]|$)/i.test(frame.url));
   if (embed) return embed;
-  if (/^https:\/\/www\.scribd\.com\/(?:doc|document)\/\d+(?:[/?#]|$)/i.test(activeUrl)) {
+  if (/^https:\/\/(?:[a-z0-9-]+\.)*scribd\.com\/(?:doc|document)\/\d+(?:[/?#]|$)/i.test(activeUrl)) {
     return frames.find(frame => frame.frameId === 0) || { frameId: 0, url: activeUrl };
   }
   return null;
