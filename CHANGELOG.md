@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.9 - 2026-11-05
+
+- Support localized Scribd domains such as `it.scribd.com` in host permissions, content scripts, and document/embedded-preview detection.
+- Request CSRF and document tokens from the active Scribd origin to preserve the localized browser session.
+
 ## 1.4.8 - 2026-10-14
 
 - Restored persisted rendering/completion/error progress after Manifest V3 worker restarts; a fresh idle timestamp no longer hides session state.

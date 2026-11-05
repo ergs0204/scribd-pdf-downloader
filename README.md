@@ -146,7 +146,7 @@ If Scribd does not provide text for a scanned page, this extension does not inve
 
 | Permission | Why it is needed |
 | --- | --- |
-| `www.scribd.com` | Detect the document, read the authorized manifest, and refresh the page token |
+| `*.scribd.com` | Detect the document (including localized domains such as `it.scribd.com`), read the authorized manifest, and refresh the page token |
 | `html.scribdassets.com` | Fetch authorized page descriptions, images, and fonts |
 | Downloads | Save the completed PDF |
 | Tabs / webNavigation / scripting | Find official pages and cross-origin embedded previews |
@@ -175,7 +175,7 @@ are uploaded; the fallback also works in Chrome/Edge without installed reference
 
 ### "No supported Scribd document was detected"
 
-- Confirm the URL starts with `https://www.scribd.com/doc/` or `https://www.scribd.com/document/`.
+- Confirm the URL uses `/doc/<id>` or `/document/<id>` on `https://www.scribd.com` or a localized domain such as `https://it.scribd.com`.
 - On [scribdvdownloader.com](https://scribdvdownloader.com/) or another third-party site, wait until the embedded Scribd preview appears.
 - Reload the page after installing or updating the extension.
 - Confirm the installed extension version matches the latest release.
