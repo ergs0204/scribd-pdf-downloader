@@ -15,6 +15,7 @@ for(const [encoded,plain,family] of [
   const result=c.decodeFontText(encoded,family,decoder);assert.equal(result.selectable,true);assert.equal(result.copyText,plain);
 }
 for(const font of fonts.filter(f=>f.family!=='ff1')) {
+  decoder.resolve?.(font.family,c.readSfntCmap(font.bytes,32,0x27af).map(({code})=>String.fromCodePoint(code)).join(''));
   const mapping=decoder.mappings.get(font.family);
   for(const {code} of c.readSfntCmap(font.bytes,32,0x27af))assert.ok(mapping.has(code),`Unresolved text character U+${code.toString(16)}`);
 }

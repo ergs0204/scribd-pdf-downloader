@@ -3,18 +3,25 @@
 globalThis.ScribdOutlineDecoder = (() => {
   const WIDTH=16, HEIGHT=24, MAX_POINTS=8192;
   let references;
+  const decodedReferences=new Map();
   const popcount=value=>{value-=(value>>>1)&0x5555;value=(value&0x3333)+((value>>>2)&0x3333);return (((value+(value>>>4))&0x0f0f)*0x0101)>>>8&255;};
   function referenceIndex() {
     if (references) return references;
     references=new Map();
     for(const [code,profiles] of Object.entries(globalThis.SPDF_GLYPH_FINGERPRINTS||{})) {
-      references.set(Number(code),profiles.map(([aspect,packed])=>{
+      references.set(Number(code),profiles);
+    }
+    return references;
+  }
+  function profilesFor(code) {
+    if(decodedReferences.has(code))return decodedReferences.get(code);
+    const profiles=(referenceIndex().get(code)||[]).map(([aspect,packed])=>{
         const bytes=Uint8Array.from(atob(packed),char=>char.charCodeAt(0));
         if(bytes.length!==HEIGHT*2 || !(aspect>0))throw Error('Invalid glyph profile');
         return {aspect,rows:Array.from({length:HEIGHT},(_,i)=>bytes[i*2]|bytes[i*2+1]<<8)};
-      }));
-    }
-    return references;
+    });
+    decodedReferences.set(code,profiles);
+    return profiles;
   }
   function fontReader(bytes) {
     const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
@@ -130,43 +137,79 @@ globalThis.ScribdOutlineDecoder = (() => {
     if(!(source.aspect>0&&target.aspect>0))return Infinity;
     return source.rows.reduce((sum,row,i)=>sum+popcount(row^target.rows[i]),0)/(WIDTH*HEIGHT)+Math.abs(Math.log(source.aspect/target.aspect))*.10;
   }
-  function infer(fonts,readCmap) {
+  function* inference(fonts,readCmap) {
     try {
       const refs=referenceIndex();if(!refs.size)return null;
-      const faces=[];let budget=0;
-      for(const font of fonts.slice(0,32)) {
+      const faces=[],byFamily=new Map(),byHash=new Map(),byObject=new WeakMap();
+      const inverse=Array(16),used=new Set();let anchors=0;
+      for(const font of fonts) {
         if(!font.bytes)continue;
         try {
-          const reader=fontReader(font.bytes),cmap=readCmap(font.bytes,0x20,0x27af),glyphs=[];
-          for(const {code,glyph} of cmap) {
-            if(++budget>4096)return null;
-            let sig;try{sig=signature(reader.contours(glyph));}catch(_){continue;}
-            if(!sig)continue;
-            const score=target=>{const profiles=refs.get(target);return profiles?Math.min(...profiles.map(profile=>distance(sig,profile))):Infinity;};
-            const ranked=[];
-            for(let candidate=code&~15;candidate<(code&~15)+16;candidate++){const error=score(candidate);if(Number.isFinite(error))ranked.push({code:candidate,error});}
-            ranked.sort((a,b)=>a.error-b.error);
-            glyphs.push({code,sig,score,ranked});
+          // Hash buckets are followed by byte equality, so collisions cannot
+          // make unrelated fonts share a decoder. Aliases cost no outline work.
+          let face=byObject.get(font.bytes),hash,bucket;
+          if(!face) {
+            hash=2166136261;for(const byte of font.bytes)hash=Math.imul(hash^byte,16777619)>>>0;
+            bucket=byHash.get(hash)||[];
+            face=bucket.find(candidate=>candidate.bytes.length===font.bytes.length&&candidate.bytes.every((value,i)=>value===font.bytes[i]));
           }
-          faces.push({family:font.family.replace(/^["']|["']$/g,'').toLowerCase(),glyphs,cmap});
+          if(!face) {
+            const reader=fontReader(font.bytes),cmap=readCmap(font.bytes,0x20,0x10ffff),blocks=new Map(),glyphs=new Map(),signatures=new Map();
+            for(const entry of cmap) {
+              if(privateUse(entry.code)||entry.code>=0xd800&&entry.code<=0xdfff)continue;
+              const block=entry.code&~15;if(!blocks.has(block))blocks.set(block,[]);blocks.get(block).push(entry);
+            }
+            face={bytes:font.bytes,cmap,blocks,mapping:new Map(),resolved:new Set(),glyphs,
+              glyph(entry) {
+                if(glyphs.has(entry.code))return glyphs.get(entry.code);
+                let sig=signatures.get(entry.glyph);
+                if(sig===undefined){try{sig=signature(reader.contours(entry.glyph));}catch(_){sig=null;}signatures.set(entry.glyph,sig);}
+                if(!sig){glyphs.set(entry.code,null);return null;}
+                const scores=new Map(),score=target=>{
+                  if(!scores.has(target))scores.set(target,Math.min(...profilesFor(target).map(profile=>distance(sig,profile))));
+                  return scores.get(target);
+                };
+                const ranked=[];
+                for(let candidate=entry.code&~15;candidate<(entry.code&~15)+16;candidate++){
+                  const error=score(candidate);if(Number.isFinite(error))ranked.push({code:candidate,error});
+                }
+                ranked.sort((a,b)=>a.error-b.error);
+                const result={code:entry.code,score,ranked};glyphs.set(entry.code,result);return result;
+              }};
+            for(const {code} of cmap)if(code===0x20||code===0xa0)face.mapping.set(code,String.fromCodePoint(code));
+            for(let block=0x30;block<0x70;block+=16)for(const entry of blocks.get(block)||[]) {
+              const glyph=face.glyph(entry);if(!glyph||glyph.ranked.length<2)continue;
+              const [best,next]=glyph.ranked;
+              if(best.error>.13||next.error-best.error<.06)continue;
+              const encoded=glyph.code&15,plain=best.code&15;
+              if(inverse[encoded]!==undefined&&inverse[encoded]!==plain)return null;
+              inverse[encoded]=plain;anchors++;
+            }
+            faces.push(face);bucket.push(face);byHash.set(hash,bucket);
+          }
+          byObject.set(font.bytes,face);
+          byFamily.set(font.family.replace(/^["']|["']$/g,'').toLowerCase(),face);
         }catch(_){/* Malformed/unsupported faces are not guessed. */}
+        yield;
       }
-      const inverse=Array(16),used=new Set();let anchors=0;
-      for(const face of faces)for(const glyph of face.glyphs) {
-        if(glyph.code<0x30||glyph.code>=0x70||glyph.ranked.length<2)continue;
-        const [best,next]=glyph.ranked;
-        if(best.error>.13||next.error-best.error<.06)continue;
-        const encoded=glyph.code&15,plain=best.code&15;
-        if(inverse[encoded]!==undefined&&inverse[encoded]!==plain)return null;
-        inverse[encoded]=plain;anchors++;
-      }
-      for(const value of inverse){if(value===undefined||used.has(value))return null;used.add(value);}
-      if(anchors<24)return null;
-      const mappings=new Map();
-      for(const face of faces) {
-        const groups=new Map(),mapping=new Map();
-        for(const glyph of face.glyphs){const block=glyph.code&~15;if(!groups.has(block))groups.set(block,[]);groups.get(block).push(glyph);}
-        for(const [block,glyphs] of groups) {
+      let permutation=anchors>=24;
+      for(const value of inverse){if(value===undefined||used.has(value))permutation=false;used.add(value);}
+      const hasIdentityCandidates=faces.some(face=>face.cmap.some(({code})=>code>=0x70&&!privateUse(code)&&refs.has(code)));
+      if(!permutation&&!hasIdentityCandidates)return null;
+      function resolveBlock(face,block) {
+        if(face.resolved.has(block))return;
+        face.resolved.add(block);
+        try {
+          const glyphs=(face.blocks.get(block)||[]).map(entry=>face.glyph(entry)).filter(Boolean),mapping=face.mapping;
+          if(!permutation) {
+            // Non-Latin-only documents may provide no ASCII key at all. Accept
+            // only strongly separated identity evidence, never a guessed key.
+            for(const glyph of glyphs) {
+              const [best,next]=glyph.ranked;
+              if(best?.code===glyph.code&&best.error<=.13&&next&&next.error-best.error>=.06)mapping.set(glyph.code,String.fromCodePoint(glyph.code));
+            }
+            return;
+          }
           const permuted=code=>(code&~15)|inverse[code&15];
           let scrambled;
           if(block>=0x30&&block<0x70)scrambled=true;
@@ -174,22 +217,40 @@ globalThis.ScribdOutlineDecoder = (() => {
           else {
             const evidence=glyphs.filter(g=>g.code!==permuted(g.code)&&Number.isFinite(g.score(g.code))&&Number.isFinite(g.score(permuted(g.code))));
             if(!evidence.length) {
-              for(const g of glyphs)if((g.code===permuted(g.code)||!Number.isFinite(g.score(permuted(g.code))))&&g.score(g.code)<=.13)mapping.set(g.code,String.fromCodePoint(g.code));
-              continue;
+              for(const g of glyphs) {
+                const [best,next]=g.ranked;
+                const clearIdentity=best?.code===g.code&&best.error<=.20&&next&&next.error-best.error>=.025;
+                if((g.code===permuted(g.code)||!Number.isFinite(g.score(permuted(g.code))))&&
+                  (g.score(g.code)<=.13||clearIdentity))mapping.set(g.code,String.fromCodePoint(g.code));
+              }
+              return;
             }
             const mean=transform=>evidence.reduce((sum,g)=>sum+g.score(transform(g.code)),0)/evidence.length;
             const identity=mean(code=>code),changed=mean(permuted);
             if(changed<=.16&&identity-changed>=.025)scrambled=true;
             else if(identity<=.16&&changed-identity>=.025)scrambled=false;
-            else continue;
+            else return;
           }
           for(const glyph of glyphs){const decoded=scrambled?permuted(glyph.code):glyph.code;if(glyph.score(decoded)<=.20)mapping.set(glyph.code,String.fromCodePoint(decoded));}
-        }
-        for(const {code} of face.cmap)if(code===0x20||code===0xa0)mapping.set(code,String.fromCodePoint(code));
-        if(mapping.size)mappings.set(face.family,mapping);
+        }catch(_){/* Unknown or malformed glyphs remain visual-only. */}
       }
-      return mappings.size?{inverse,mappings,families:new Set(mappings.keys()),method:'outline-signatures'}:null;
+      // ASCII anchors are already measured. Other blocks are resolved only when
+      // text actually uses them, keeping large CJK fonts and long font lists cheap.
+      for(const face of faces)for(let block=0x30;block<0x70;block+=16)resolveBlock(face,block);
+      const mappings=new Map([...byFamily].map(([family,face])=>[family,face.mapping]));
+      return {inverse:permutation?inverse:null,mappings,families:new Set(byFamily.keys()),method:'outline-signatures',
+        resolve(family,text) {
+          const face=byFamily.get(family);if(!face)return undefined;
+          for(const character of text)resolveBlock(face,character.codePointAt(0)&~15);
+          return face.mapping;
+        }};
     }catch(_){return null;}
   }
-  return {infer,fontReader,signature,distance};
+  function privateUse(code){return code>=0xe000&&code<=0xf8ff||code>=0xf0000&&code<=0xffffd||code>=0x100000&&code<=0x10fffd;}
+  function infer(fonts,readCmap){const steps=inference(fonts,readCmap);let result;do{result=steps.next();}while(!result.done);return result.value;}
+  async function inferAsync(fonts,readCmap,yieldTask=()=>new Promise(resolve=>setTimeout(resolve,0))){
+    const steps=inference(fonts,readCmap);let count=0;
+    while(true){const result=steps.next();if(result.done)return result.value;if(++count%16===0||count===1)await yieldTask();}
+  }
+  return {infer,inferAsync,fontReader,signature,distance};
 })();

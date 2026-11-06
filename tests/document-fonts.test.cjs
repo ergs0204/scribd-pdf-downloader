@@ -250,6 +250,7 @@ test("ambiguous and conflicting font mappings cannot silently copy guessed strin
   const decoder=sandbox.inferFontTextDecoder([{family:'ff0',cmap:first}]);
   assert.equal(sandbox.decodeFontText('Normal 中文 😀','ff0',decoder).copyText,'Normal 中文 😀');
   assert.equal(sandbox.decodeFontText('\uF0B7','ff0',decoder).selectable,false);
+  assert.equal(sandbox.decodeFontText('\u{f0000}','ff0',decoder).selectable,false);
 });
 
 function sfntFixture(format, rangeOffset = false) {
@@ -301,6 +302,28 @@ test('font CSS decodes only supported document data fonts', () => {
   assert.equal(fonts[0].cmap[0].glyph,1);
   assert.equal(sandbox.documentFontCmaps('@font-face{font-family:ff1;src:url(data:font/ttf;base64,AAAA)}').length,0);
   assert.equal(sandbox.documentFontCmaps('@font-face{font-family:ff1;src:url(https://example.com/font.ttf)}').length,0);
+});
+
+test('bounded cmap reader supports Chinese and supplementary-plane Unicode',()=>{
+  const sandbox=loadScript('builder.js'),bytes=sfntFixture(12);
+  bytes.writeUInt32BE(0x20000,56);bytes.writeUInt32BE(0x20001,60);
+  assert.deepEqual(JSON.parse(JSON.stringify(sandbox.readSfntCmap(bytes,0x20,0x10ffff))),[{code:0x20000,glyph:7},{code:0x20001,glyph:8}]);
+});
+
+test('BMP and full-Unicode cmap subtables agree only over their shared range',()=>{
+  const sandbox=loadScript('builder.js'),bmp=sfntFixture(4),bytes=Buffer.alloc(160);
+  bytes.writeUInt32BE(0x10000,0);bytes.writeUInt16BE(1,4);
+  bytes.write('cmap',12);bytes.writeUInt32BE(28,20);bytes.writeUInt32BE(132,24);
+  bytes.writeUInt16BE(2,30);
+  bytes.writeUInt16BE(3,32);bytes.writeUInt16BE(1,34);bytes.writeUInt32BE(20,36);
+  bytes.writeUInt16BE(3,40);bytes.writeUInt16BE(10,42);bytes.writeUInt32BE(52,44);
+  bmp.copy(bytes,48,40,72);
+  bytes.writeUInt16BE(12,80);bytes.writeUInt32BE(40,84);bytes.writeUInt32BE(2,92);
+  bytes.writeUInt32BE(0x30,96);bytes.writeUInt32BE(0x31,100);bytes.writeUInt32BE(1,104);
+  bytes.writeUInt32BE(0x20000,108);bytes.writeUInt32BE(0x20000,112);bytes.writeUInt32BE(3,116);
+  const read=()=>JSON.parse(JSON.stringify(sandbox.readSfntCmap(bytes,0x20,0x10ffff)));
+  assert.deepEqual(read(),[{code:48,glyph:1},{code:49,glyph:2},{code:0x20000,glyph:3}]);
+  bytes.writeUInt32BE(9,104);assert.deepEqual(read(),[],'Conflicting BMP mappings fail closed');
 });
 
 test("an explicit excluded fragment is still omitted from the PDF text map", () => {

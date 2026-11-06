@@ -5,3 +5,5 @@
 Thumbs.db
 tmp/
 tmp-*.png
+__pycache__/
+*.py[cod]

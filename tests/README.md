@@ -108,6 +108,32 @@ completion alone cannot detect wrong font glyphs or layout problems.
 
 ## Older shuffled-font fallback
 
+The outline tests also cover merged previews with 225 and 5,000 subsets, shared
+subset-byte caching, anchors in later subsets, on-demand character blocks,
+asynchronous yielding, CJK-only identity evidence, and supplementary-plane
+Unicode. The old document-wide face/glyph caps are removed. Table bounds,
+65,536-entry per-font cmaps, recursive-outline complexity checks, and ambiguity
+rejection remain. Unicode subtable consistency is checked over shared ranges.
+Copy-layer tests preserve real repeated letters while removing offset shadow
+copies and overlapping layout spaces; NBSP becomes a normal copyable space.
+
+Generator-only checks (requires Python/fontTools, no reference font fixtures):
+
+```sh
+python -m unittest discover -s tests -p test_reference_generator.py
+```
+
+For document `718119075`, run the opt-in browser server with its public URL and
+export all 67 pages. Then check the saved PDF with a CommonJS PDF.js build:
+
+```sh
+node tests/verify-vietnamese-copy.cjs tmp/regression-718119075/full-export.pdf /path/to/pdfjs-dist/build/pdf.js
+```
+
+This asserts selectable text on every page, an unduplicated heading, Vietnamese
+body phrases and accents, and late-subset text on page 67. It does not bundle any document data. Private-use
+or unverified mathematical symbols may remain visual-only.
+
 `outline-decoder.test.cjs` uses synthetic vector contours, not Scribd page data or
 copyrighted font files. It covers normalization, shuffled glyph IDs with multiple
 keys, bounds checks, insufficient/contradictory evidence, and malformed profiles.
@@ -124,7 +150,12 @@ Do not commit the source CSS/font fixture. For a new export of that document,
 the browser runner expects 10 decoded text pages for a full export. The one
 unresolved arrow glyph can remain visual-only.
 
-Regenerate compact reference signatures from legally available local fonts with
+Regenerate reference signatures from legally available local fonts with
 `python scripts/generate-glyph-fingerprints.py --font-dir /path/to/fonts` (requires
-fontTools at development time only). The generated JavaScript contains numeric
-occupancy signatures and aspect ratios, not font files or drawable outlines.
+fontTools at development time only). This includes every printable public Unicode
+cmap entry in every face of the selected collections, not only Latin ranges.
+`--font /path/to/font.ttf` adds a local font; `--all-local-fonts` scans the directory.
+The generated JavaScript contains numeric occupancy signatures and aspect ratios,
+not font files or drawable outlines. `assets/reference-coverage.json` records
+exact covered ranges, script-block character counts, and reference faces. This
+describes reference coverage, not a guarantee that arbitrary fonts decode.

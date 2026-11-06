@@ -72,6 +72,104 @@ test('malformed reference profiles fail closed',()=>{
   assert.equal(c.ScribdOutlineDecoder.infer([],()=>[]),null);
 });
 
+test('bundled references cover Vietnamese letters and composed tone marks',()=>{
+  const c=runtime();
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../glyph-fingerprints.js'),'utf8'),c);
+  for(const letter of 'ƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'){
+    assert.ok(c.SPDF_GLYPH_FINGERPRINTS[letter.codePointAt(0)]?.length,`Missing Vietnamese reference ${letter}`);
+  }
+});
+
+test('multilingual reference metadata reports exactly the bundled character coverage',()=>{
+  const c=runtime();
+  vm.runInContext(fs.readFileSync(require('node:path').join(__dirname,'../glyph-fingerprints.js'),'utf8'),c);
+  const coverage=JSON.parse(fs.readFileSync(require('node:path').join(__dirname,'../assets/reference-coverage.json'),'utf8'));
+  const codes=Object.keys(c.SPDF_GLYPH_FINGERPRINTS).map(Number).sort((a,b)=>a-b);
+  assert.equal(coverage.characters,codes.length);
+  assert.equal(coverage.profiles,Object.values(c.SPDF_GLYPH_FINGERPRINTS).reduce((sum,profiles)=>sum+profiles.length,0));
+  assert.deepEqual(coverage.unicodeRanges.flatMap(([first,last])=>Array.from({length:last-first+1},(_,i)=>first+i)),codes);
+  for(const character of 'Жאشकก中あ한𠀀')assert.ok(c.SPDF_GLYPH_FINGERPRINTS[character.codePointAt(0)]?.length,character);
+});
+
+test('large merged documents decode every subset, including families after the first 32',()=>{
+  const c=runtime(),profiles={},glyphs=[],cmap=[];
+  for(let block=0x30;block<=0x40;block+=16)for(let plain=0;plain<16;plain++){
+    profiles[block+plain]=[encodedProfile(c.ScribdOutlineDecoder.signature(shape(plain)))];
+    cmap.push({code:block+plain,glyph:glyphs.length});glyphs.push(shape(plain));
+  }
+  c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  const bytes=makeFont(glyphs),fonts=Array.from({length:225},(_,i)=>({family:`ff${i}`,bytes}));
+  const decoder=c.ScribdOutlineDecoder.infer(fonts,()=>cmap);
+  assert.ok(decoder);
+  assert.equal(decoder.families.size,225);
+  for(const {family} of fonts)assert.equal(decoder.mappings.get(family).get(0x41),'A');
+  let reads=0;
+  const larger=c.ScribdOutlineDecoder.infer(Array.from({length:5000},(_,i)=>({family:`ff${i}`,bytes})),()=>{reads++;return cmap;});
+  assert.ok(larger,'More fonts must not discard every mapping');
+  assert.equal(larger.families.size,5000);
+  assert.equal(larger.resolve('ff4999','A').get(0x41),'A');
+  assert.equal(reads,1,'Identical subset bytes should be read only once');
+});
+
+test('geometric anchors may occur after the first 32 sparse font subsets',()=>{
+  const c=runtime(),profiles={},glyphs=[],cmap=[];
+  for(let block=0x30;block<=0x40;block+=16)for(let plain=0;plain<16;plain++){
+    profiles[block+plain]=[encodedProfile(c.ScribdOutlineDecoder.signature(shape(plain)))];
+    cmap.push({code:block+plain,glyph:glyphs.length});glyphs.push(shape(plain));
+  }
+  c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  const sparse=makeFont([shape(1)]),complete=makeFont(glyphs);
+  const fonts=[...Array.from({length:32},(_,i)=>({family:`ff${i}`,bytes:sparse})),{family:'ff32',bytes:complete}];
+  const decoder=c.ScribdOutlineDecoder.infer(fonts,bytes=>bytes===sparse?[{code:0x41,glyph:0}]:cmap);
+  assert.ok(decoder);
+  assert.equal(decoder.mappings.get('ff32').get(0x41),'A');
+});
+
+test('unchanged character blocks accept a clear geometric identity match',()=>{
+  const c=runtime(),profiles={},glyphs=[],cmap=[];
+  for(let block=0x30;block<=0x40;block+=16)for(let plain=0;plain<16;plain++){
+    profiles[block+plain]=[encodedProfile(c.ScribdOutlineDecoder.signature(shape(plain)))];
+    cmap.push({code:block+plain,glyph:glyphs.length});glyphs.push(shape(plain));
+  }
+  const signature=c.ScribdOutlineDecoder.signature(shape(1));
+  const perturbed={aspect:signature.aspect,rows:signature.rows.map((row,i)=>i<4?row^0xffff:row)};
+  const alternative={aspect:signature.aspect,rows:signature.rows.map(row=>row^0xffff)};
+  profiles[0x71]=[encodedProfile(perturbed)];profiles[0x72]=[encodedProfile(alternative)];
+  cmap.push({code:0x71,glyph:glyphs.length});glyphs.push(shape(1));
+  c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  const decoder=c.ScribdOutlineDecoder.infer([{family:'ff0',bytes:makeFont(glyphs)}],()=>cmap);
+  assert.equal(decoder.resolve('ff0','q').get(0x71),'q');
+  // A close runner-up must still prevent the relaxed identity acceptance.
+  profiles[0x72]=[encodedProfile(perturbed)];
+  const ambiguous=runtime(profiles).ScribdOutlineDecoder.infer([{family:'ff0',bytes:makeFont(glyphs)}],()=>cmap);
+  assert.equal(ambiguous.resolve('ff0','q').has(0x71),false);
+});
+
+test('CJK-only fonts use verified identity profiles and supplementary characters resolve lazily',()=>{
+  const c=runtime(),profiles={},glyphs=[shape(1),shape(12),shape(7)],cmap=[{code:0x4e00,glyph:0},{code:0x4e01,glyph:1},{code:0x20000,glyph:2}];
+  for(let i=0;i<cmap.length;i++)profiles[cmap[i].code]=[encodedProfile(c.ScribdOutlineDecoder.signature(glyphs[i]))];
+  // A competing reference is required to establish a separated identity match.
+  profiles[0x20001]=[encodedProfile(c.ScribdOutlineDecoder.signature(shape(10)))];
+  c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  const decoder=c.ScribdOutlineDecoder.infer([{family:'ff0',bytes:makeFont(glyphs)}],()=>cmap);
+  assert.ok(decoder);
+  assert.equal(decoder.mappings.get('ff0').has(0x20000),false);
+  assert.equal(decoder.resolve('ff0','一𠀀').get(0x4e00),'一');
+  assert.equal(decoder.resolve('ff0','一𠀀').get(0x20000),'𠀀');
+});
+
+test('asynchronous inference yields while considering unique fonts',async()=>{
+  const c=runtime(),profiles={},glyphs=[],cmap=[];
+  for(let block=0x30;block<=0x40;block+=16)for(let plain=0;plain<16;plain++){
+    profiles[block+plain]=[encodedProfile(c.ScribdOutlineDecoder.signature(shape(plain)))];
+    cmap.push({code:block+plain,glyph:glyphs.length});glyphs.push(shape(plain));
+  }
+  c.SPDF_GLYPH_FINGERPRINTS=profiles;
+  let yields=0;
+  const decoder=await c.ScribdOutlineDecoder.inferAsync([{family:'ff0',bytes:makeFont(glyphs)}],()=>cmap,async()=>{yields++;});
+  assert.ok(decoder);assert.ok(yields>0);
+});
+
 test('main decoder uses outline evidence rather than a uniquely wrong glyph-ID order',()=>{
   const c=runtime(),profiles={},glyphs=[],cmap=[];
   for(let block=0x30;block<=0x40;block+=16)for(let plain=15;plain>=0;plain--){

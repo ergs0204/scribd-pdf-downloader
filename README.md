@@ -142,6 +142,34 @@ Scribd documents are not all stored the same way:
 
 If Scribd does not provide text for a scanned page, this extension does not invent it. Use a separate OCR tool afterward if you personally need searchable scans.
 
+## Language references and large font collections
+
+The local signature fallback now generates references from the full public
+Unicode cmaps of the selected reference fonts, including every face in font
+collections. The [coverage report](assets/reference-coverage.json) lists exact
+covered ranges and character counts by script block. These are reference
+coverage counts, **not a promise that every language, font, or document decodes**.
+Rare fonts, ambiguous glyphs, unsupported outlines, and context-sensitive layout
+can still leave fragments visual-only. No OCR or online recognition is used.
+
+Documents are not cut off after 32 or 1,024 declared subsets. Identical subset
+bytes share parsed data; inference yields between groups of fonts; character
+blocks and reference profiles are decoded on demand. Individual font-table,
+glyph-count, outline-complexity, and PDF-format checks remain in place.
+Available browser memory is still a practical limit, so this is not unlimited
+font or document-size support.
+
+To expand coverage using your own locally available fonts (development only):
+
+```sh
+python scripts/generate-glyph-fingerprints.py --font /path/to/reference.ttf
+```
+
+Or scan all font files in a directory with `--all-local-fonts --font-dir /path/to/fonts`.
+Large collections can take considerable time and produce a large reference file.
+Only numeric signatures and coverage metadata are generated; no font files are
+bundled. Regenerate, run the tests, and check actual copy output before sharing.
+
 ## Permissions and privacy
 
 | Permission | Why it is needed |
@@ -166,7 +194,7 @@ are uploaded; the fallback also works in Chrome/Edge without installed reference
 - Signed asset tokens expire; start each export from a live document page.
 - Very large documents are assembled in browser memory and may exceed available RAM.
 - Unusual vertical or mathematical layouts may render differently from the source.
-- Font decoding supports ordered subset fonts and some older shuffled TrueType subsets. The local signature fallback requires at least 24 clear ASCII anchors supporting all 16 permutation entries, rejects conflicts, and checks each character block's geometry before copying it. Reference coverage focuses on Latin text, including Polish diacritics and common punctuation; it is not a universal decoder. Unsupported outlines, ambiguous mappings, and unresolved fragments are omitted from copying, with a popup warning.
+- Font decoding supports ordered subset fonts and some older shuffled TrueType subsets. Scramble-key inference requires at least 24 clear ASCII anchors supporting all 16 permutation entries and rejects conflicts. Fonts without an ASCII key can copy only strongly separated identity-profile matches. Each used character block is checked before copying; multilingual reference coverage is not a universal decoder. Unsupported outlines, ambiguous mappings, and unresolved fragments are omitted from copying, with a popup warning.
 - Private-use symbol glyphs can remain visible without a copyable equivalent. Text contained only inside images remains image-only.
 - Selectable text quality and reading order depend on Scribd's positioned fragments; this does not reconstruct semantic paragraphs or fix source typos.
 - Site changes can break manifest or token parsing; open an issue with non-sensitive reproduction details if that happens.
@@ -201,6 +229,10 @@ Reload the extension and confirm version **1.4.4** or newer, reload the document
 For older shuffled fonts, including the Polish `492478137` document, use
 **1.4.6** or newer for the local glyph-signature fallback. Unresolved symbols
 may still remain visual-only; check the popup's warning.
+
+For the Vietnamese `718119075` document, use **1.4.9** or newer. It fixes later
+font subsets, missing Vietnamese references, repeated shadow letters, and
+non-breaking/layout spaces in the copy layer. Export a new PDF after updating.
 
 ## Development
 

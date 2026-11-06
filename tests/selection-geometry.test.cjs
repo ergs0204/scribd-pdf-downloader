@@ -93,3 +93,26 @@ test('collapsed source spaces cannot give the copy font a near-zero space advanc
   const codec=r.makeTextCodec([{texts:[fragment]}]);
   assert.equal(codec.entries.find(entry=>entry.character===' ').advance,1024);
 });
+
+test('copy preparation removes offset shadow glyphs but preserves real repeated letters',()=>{
+  const r=renderer(),box=(x,y=20)=>({x,y,width:16,height:32});
+  const fragments=[
+    {text:'Ó',characterBoxes:[box(21.4,21.4)],family:'ff0'},
+    {text:'Ó',characterBoxes:[box(20)],family:'ff0'},
+    {text:'ll',characterBoxes:[box(60),box(76)],family:'ff0'},
+    {text:'Ó',characterBoxes:[box(20,70)],family:'ff0'}
+  ];
+  const prepared=r.prepareCopyPages([{texts:fragments}])[0].texts;
+  assert.equal(prepared.map(t=>t.copyText??t.text).join(''),'ÓllÓ');
+  assert.equal(fragments[0].characterBoxes[0].x,21.4,'Do not mutate the visible source');
+});
+
+test('copy preparation normalizes NBSP and removes only spaces overlapping a following glyph',()=>{
+  const r=renderer();
+  const fragment={text:'tí\u00a0nh\u00a0toán',x:0,y:0,width:90,height:20,
+    characterBoxes:[0,10,18,18,28,38,44,54,64,74].map((x,i)=>({x,y:0,width:i===2||i===5?6:10,height:20}))};
+  const prepared=r.prepareCopyPages([{texts:[fragment]}])[0].texts;
+  assert.equal(prepared.map(t=>t.copyText??t.text).join(''),'tính toán');
+  assert.equal(fragment.text,'tí\u00a0nh\u00a0toán');
+  assert.deepEqual(JSON.parse(JSON.stringify(r.prepareCopyPages([{texts:prepared}])[0].texts)),JSON.parse(JSON.stringify(prepared)));
+});

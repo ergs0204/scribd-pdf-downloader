@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here.
 
+## 1.4.9 - 2026-11-06
+
+- Fixed missing selectable text in merged previews declaring more than 32 font subsets, including the 67-page Vietnamese document `718119075`. All declared subsets are now considered instead of silently truncating the decoder.
+- Removed document-wide face/glyph cutoffs: identical subset bytes share data, inference yields between font groups, and character blocks/reference profiles resolve on demand. Per-font table, cmap-entry, and outline-complexity bounds remain in place.
+- Expanded local reference signatures across public Unicode entries in all selected reference-font collection faces. Added explicit coverage metadata and options for additional local fonts or directory scanning. This is multilingual reference coverage, not a universal language/font decoder. Original document fonts still supply every visible glyph; no OCR, uploads, or bundled font files.
+- Retained clearly separated, geometry-verified identity matches in unchanged character blocks without accepting ambiguous matches.
+- Fixed repeated shadow letters and positioning spaces in the invisible copy layer; NBSP/narrow NBSP copy as ordinary spaces, without altering visible text or genuine repeated letters.
+- Added large-document, late-anchor, CJK/supplementary-Unicode, ambiguity, and copy-cleanup regressions plus an opt-in PDF.js check of the affected document. Unverified private-use or mathematical symbols may remain visual-only.
+- Verified 57 JavaScript and 3 Python tests, nine local multilingual font samples, the existing English/Polish regressions, and selectable text on all 67 affected Vietnamese pages. The corrected heading copies without doubled letters or NBSP; all page images remain unchanged. One successfully fetched image was replayed in memory to avoid an intermittent local test-proxy error during the full-pipeline check.
+
 ## 1.4.8 - 2026-10-14
 
 - Restored persisted rendering/completion/error progress after Manifest V3 worker restarts; a fresh idle timestamp no longer hides session state.

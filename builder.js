@@ -69,7 +69,10 @@ async function runJob(job) {
   const fontStyleText = await loadDocumentFontStyles(job.fontStylesheets || []);
   installDocumentFontStyles(fontStyleText);
   const renderStyleText = `${job.styleText || ""}\n${fontStyleText}`;
-  const textDecoder = inferFontTextDecoder(documentFontCmaps(fontStyleText));
+  const fonts = documentFontCmaps(fontStyleText);
+  const textDecoder = globalThis.ScribdOutlineDecoder?.inferAsync
+    ? await globalThis.ScribdOutlineDecoder.inferAsync(fonts, readSfntCmap) || inferOrderedFontTextDecoder(fonts)
+    : inferFontTextDecoder(fonts);
   let completed = 0;
   let next = 0;
   let textPageCount = 0;
@@ -464,7 +467,7 @@ function decodeFontText(text, family, decoder) {
   const name = family.split(',')[0].trim().replace(/^["']|["']$/g, '').toLowerCase();
   if (!decoder?.families.has(name)) return { copyText: '', selectable: false, decoded: false };
   if (decoder.mappings) {
-    const mapping=decoder.mappings.get(name),decoded=[...text].map(character=>mapping?.get(character.codePointAt(0)));
+    const mapping=decoder.resolve?decoder.resolve(name,text):decoder.mappings.get(name),decoded=[...text].map(character=>mapping?.get(character.codePointAt(0)));
     if(decoded.some(character=>character===undefined))return {copyText:'',selectable:false,decoded:false};
     return {copyText:decoded.join(''),selectable:true,decoded:true};
   }
@@ -475,7 +478,7 @@ function decodeFontText(text, family, decoder) {
   }).join('');
   // Private-use symbol glyphs have no Unicode meaning in cmap. Keep their
   // appearance but omit them from copying rather than inventing a character.
-  if (/[\uE000-\uF8FF]/u.test(copyText)) return { copyText: '', selectable: false, decoded: false };
+  if (/\p{Co}/u.test(copyText)) return { copyText: '', selectable: false, decoded: false };
   return { copyText, selectable: true, decoded: true };
 }
 
@@ -494,12 +497,12 @@ function documentFontCmaps(css) {
   return fonts;
 }
 
-// Only read the 64 relevant code points. Bounds checks apply to every table
-// and subtable access; hostile/unsupported fonts fail closed, without loops
-// over a potentially enormous character range.
+// The default reads only 64 ASCII anchor codes. The lazy outline decoder can
+// request all Unicode; table/group and output-entry bounds still apply, without
+// scanning unrepresented code points or trusting inconsistent Unicode subtables.
 function readSfntCmap(bytes, lower = 0x30, upper = 0x6f) {
   try {
-    if(!Number.isInteger(lower)||!Number.isInteger(upper)||lower<0||upper>0xffff||upper<lower)return [];
+    if(!Number.isInteger(lower)||!Number.isInteger(upper)||lower<0||upper>0x10ffff||upper<lower)return [];
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const u16 = offset => view.getUint16(offset, false);
     const u32 = offset => view.getUint32(offset, false);
@@ -560,7 +563,7 @@ function readSfntCmap(bytes, lower = 0x30, upper = 0x6f) {
               if (glyph) glyph = (glyph + delta) & 0xffff;
             }
             if (glyph) entries.push({ code, glyph });
-            if(entries.length>8192)return [];
+            if(entries.length>65536)return [];
           }
         }
       } else {
@@ -574,16 +577,19 @@ function readSfntCmap(bytes, lower = 0x30, upper = 0x6f) {
             const glyph = u32(record + 8) + code - start;
             if(glyph>65535)return [];
             if (glyph) entries.push({ code, glyph });
-            if(entries.length>8192)return [];
+            if(entries.length>65536)return [];
           }
         }
       }
-      if (entries.length) candidates.push(entries);
+      if (entries.length) candidates.push({entries,format});
     }
     // Unicode subtables must agree for the range being decoded.
     const signature = entries => JSON.stringify(entries.slice().sort((a, b) => a.code - b.code));
-    if (candidates.some(entries => signature(entries) !== signature(candidates[0]))) return [];
-    return candidates[0] || [];
+    for(let i=1;i<candidates.length;i++) {
+      const limit=candidates[i].format===4||candidates[0].format===4?0xffff:0x10ffff;
+      if(signature(candidates[i].entries.filter(entry=>entry.code<=limit))!==signature(candidates[0].entries.filter(entry=>entry.code<=limit)))return [];
+    }
+    return candidates.find(candidate=>candidate.format===12)?.entries || candidates[0]?.entries || [];
   } catch (_) { return []; }
 }
 
@@ -734,6 +740,7 @@ function safeFilename(value) {
 }
 
 function makePdf(pages) {
+  pages = prepareCopyPages(pages);
   const encoder = new TextEncoder();
   const codec = makeTextCodec(pages);
   const hasText = codec.characters.size > 0;
@@ -808,6 +815,70 @@ function makePdf(pages) {
     position += chunk.length;
   }
   return result;
+}
+
+// Clean only the invisible copy layer. The already-rendered page image and
+// original source fragments remain untouched (including decorative shadows).
+function prepareCopyPages(pages) {
+  return pages.map(page => {
+    const glyphs=[],duplicates=new Map(),occupied=new Map(),cell=16;
+    const key=(x,y)=>`${Math.floor(x/cell)},${Math.floor(y/cell)}`;
+    for(const [fragmentIndex,fragment] of page.texts.entries()) {
+      if(fragment.selectable===false)continue;
+      const text=[...(fragment.copyText??fragment.text)];
+      text.forEach((value,index)=>{
+        const character=/[\u00a0\u202f]/u.test(value)?' ':value;
+        const box={...selectionBox(fragment,index,text.length)};
+        const glyph={character,box,fragmentIndex,removed:false};
+        if(!(box.width>0&&box.height>0)){glyph.removed=true;glyphs.push(glyph);return;}
+        let duplicate;
+        for(let dx=-1;dx<=1&&!duplicate;dx++)for(let dy=-1;dy<=1&&!duplicate;dy++) {
+          for(const other of duplicates.get(character+'\0'+key(box.x+dx*cell,box.y+dy*cell))||[]) {
+            const b=other.box,tolerance=Math.min(3,Math.min(box.height,b.height)*.08,Math.min(box.width,b.width)*.22);
+            if(Math.abs(box.x-b.x)<=tolerance&&Math.abs(box.y-b.y)<=tolerance&&
+              Math.abs(box.width-b.width)<=Math.max(.1,box.width*.05)&&Math.abs(box.height-b.height)<=Math.max(.1,box.height*.05)) {
+              duplicate=other;break;
+            }
+          }
+        }
+        if(duplicate) {
+          glyph.removed=true;
+          // Keep the foreground origin of the usual down/right shadow pair.
+          if(box.x<=duplicate.box.x&&box.y<=duplicate.box.y)duplicate.box=box;
+        }else{
+          const bucket=character+'\0'+key(box.x,box.y);
+          if(!duplicates.has(bucket))duplicates.set(bucket,[]);
+          duplicates.get(bucket).push(glyph);
+        }
+        glyphs.push(glyph);
+      });
+    }
+    for(const glyph of glyphs) {
+      if(glyph.removed||/\s/u.test(glyph.character))continue;
+      const b=glyph.box,x0=Math.floor(b.x/cell),x1=Math.floor((b.x+b.width)/cell),y0=Math.floor(b.y/cell),y1=Math.floor((b.y+b.height)/cell);
+      if((x1-x0+1)*(y1-y0+1)>4096)continue;
+      for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++) {
+        const bucket=`${x},${y}`;if(!occupied.has(bucket))occupied.set(bucket,[]);occupied.get(bucket).push(glyph);
+      }
+    }
+    for(const glyph of glyphs) {
+      if(glyph.removed||glyph.character!==' ')continue;
+      const b=glyph.box;
+      glyph.removed=(occupied.get(key(b.x+b.width/2,b.y+b.height/2))||[]).some(other=>{
+        const a=other.box;
+        const overlapX=Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x);
+        const overlapY=Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y);
+        return overlapX>b.width*.5&&overlapY>Math.min(a.height,b.height)*.7;
+      });
+    }
+    const byFragment=new Map();
+    for(const glyph of glyphs)if(!glyph.removed){if(!byFragment.has(glyph.fragmentIndex))byFragment.set(glyph.fragmentIndex,[]);byFragment.get(glyph.fragmentIndex).push(glyph);}
+    return {...page,texts:page.texts.flatMap((fragment,index)=>{
+      if(fragment.selectable===false)return [fragment];
+      const selected=byFragment.get(index);if(!selected?.length)return [];
+      return [{...fragment,copyText:selected.map(g=>g.character).join(''),characterBoxes:selected.map(g=>g.box)}];
+    })};
+  });
 }
 
 function makeTextCodec(pages) {
