@@ -86,7 +86,7 @@ function assertOk(response) {
 
 function getDocumentId(source) {
   const fromUrl = location.pathname.match(/\/embeds\/(\d+)\/content/);
-  const fromOfficialUrl = location.pathname.match(/^\/(?:doc|document)\/(\d+)(?:\/|$)/);
+  const fromOfficialUrl = location.pathname.match(/^\/(?:doc|document|presentation)\/(\d+)(?:\/|$)/);
   const fromSource = source.match(/initTokenRefresh\(["'](\d+)["']\)/);
   const id = fromUrl?.[1] || fromOfficialUrl?.[1] || fromSource?.[1];
   if (!id) throw new Error("Could not identify the Scribd document.");
