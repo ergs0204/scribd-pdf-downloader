@@ -30,7 +30,8 @@
     "matches": [
       "https://www.scribd.com/embeds/*/content*",
       "https://www.scribd.com/doc/*",
-      "https://www.scribd.com/document/*"
+      "https://www.scribd.com/document/*",
+      "https://www.scribd.com/presentation/*"
     ],
     "js": ["content.js"],
     "run_at": "document_idle",
