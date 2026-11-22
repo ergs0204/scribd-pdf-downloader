@@ -43,7 +43,7 @@ async function prepareJob() {
 }
 
 async function getPreviewSource(documentId, fallbackSource) {
-  if (!/^\/(?:doc|document)\/\d+(?:\/|$)/i.test(location.pathname)) return fallbackSource;
+  if (!/^\/(?:doc|document|presentation)\/\d+(?:\/|$)/i.test(location.pathname)) return fallbackSource;
   const previewUrl = new URL(`/embeds/${documentId}/content`, location.origin);
   previewUrl.searchParams.set("start_page", "1");
   previewUrl.searchParams.set("view_mode", "scroll");
